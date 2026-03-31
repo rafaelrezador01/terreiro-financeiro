@@ -145,6 +145,10 @@ tr:last-child td{border-bottom:none;}
       <div class="topbar-title" id="pageTitle">Dashboard</div>
     </div>
     <div class="topbar-actions" id="topbarActions"></div>
+    <div id="filtroGlobal" style="display:flex;align-items:center;gap:8px;margin-left:16px;">
+      <select class="form-control" id="selectMesGlobal" style="width:auto;font-size:13px;" onchange="alterarPeriodoGlobal()"></select>
+      <select class="form-control" id="selectAnoGlobal" style="width:auto;font-size:13px;" onchange="alterarPeriodoGlobal()"></select>
+    </div>
   </div>
   <div class="content" id="pageContent"></div>
 </div>
@@ -179,7 +183,15 @@ const dbRef=ref(firebaseDB,'axe_financeiro');
 
 let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[]};
 let paginaAtual='dashboard';
-let filtroMesMens,filtroAnoMens,filtroTipoLanc,filtroMesLanc,filtroAnoLanc;
+let filtroMes, filtroAno;
+let filtroTipoLanc='todos';
+// aliases mantidos para compatibilidade interna
+Object.defineProperty(window,'filtroMesMens',{get:()=>filtroMes,set:v=>{filtroMes=v;}});
+Object.defineProperty(window,'filtroAnoMens',{get:()=>filtroAno,set:v=>{filtroAno=v;}});
+Object.defineProperty(window,'filtroMesLanc',{get:()=>filtroMes,set:v=>{filtroMes=v;}});
+Object.defineProperty(window,'filtroAnoLanc',{get:()=>filtroAno,set:v=>{filtroAno=v;}});
+Object.defineProperty(window,'filtroDashMes',{get:()=>filtroMes,set:v=>{filtroMes=v;}});
+Object.defineProperty(window,'filtroDashAno',{get:()=>filtroAno,set:v=>{filtroAno=v;}});
 let _iniciado=false;
 
 // Salva tudo no Firebase
@@ -219,7 +231,31 @@ function getAno(){return new Date().getFullYear();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
 function confirmar(msg,cb){if(confirm(msg))cb();}
 
-function toggleSidebar(){const s=document.getElementById('sidebar');const o=document.getElementById('overlayBg');s.classList.toggle('open');o.style.display=s.classList.contains('open')?'block':'none';}
+function iniciarFiltroGlobal(){
+  const sm=document.getElementById('selectMesGlobal');
+  const sa=document.getElementById('selectAnoGlobal');
+  sm.innerHTML=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'">'+(mesNome(i+1))+'</option>').join('');
+  const ano=getAno();
+  sa.innerHTML=[ano-1,ano,ano+1].map(a=>'<option value="'+a+'">'+a+'</option>').join('');
+  sm.value=filtroMes;
+  sa.value=filtroAno;
+}
+function alterarPeriodoGlobal(){
+  filtroMes=+document.getElementById('selectMesGlobal').value;
+  filtroAno=+document.getElementById('selectAnoGlobal').value;
+  // re-renderiza a aba atual com o novo período
+  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,relatorios:pgRelatorios};
+  if(pages[paginaAtual])pages[paginaAtual]();
+}
+function atualizarSeletorGlobal(){
+  const sm=document.getElementById('selectMesGlobal');
+  const sa=document.getElementById('selectAnoGlobal');
+  if(sm)sm.value=filtroMes;
+  if(sa)sa.value=filtroAno;
+  // esconde o seletor na aba trabalhadores
+  const fg=document.getElementById('filtroGlobal');
+  if(fg)fg.style.display=paginaAtual==='trabalhadores'?'none':'flex';
+}const s=document.getElementById('sidebar');const o=document.getElementById('overlayBg');s.classList.toggle('open');o.style.display=s.classList.contains('open')?'block':'none';}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlayBg').style.display='none';}
 
 const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lancamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatorios'};
@@ -231,6 +267,7 @@ function navigate(page){
   document.getElementById('pageTitle').textContent=titulos[page]||page;
   document.getElementById('topbarActions').innerHTML='';
   closeSidebar();
+  atualizarSeletorGlobal();
   const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios};
   if(pages[page])pages[page]();
 }
@@ -245,16 +282,9 @@ function closeModal(){document.getElementById('modalOverlay').classList.remove('
 document.getElementById('modalOverlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
 
 // DASHBOARD
-let filtroDashMes, filtroDashAno;
-function pgDashboard(){
-  filtroDashMes=filtroDashMes||getMes();
-  filtroDashAno=filtroDashAno||getAno();
-  renderDashboard();
-}
+function pgDashboard(){renderDashboard();}
 function renderDashboard(){
-  const mes=filtroDashMes, ano=filtroDashAno;
-  const mO=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===mes?'selected':'')+'>'+mesNome(i+1)+'</option>').join('');
-  const aO=[ano-1,ano,ano+1].map(a=>'<option value="'+a+'" '+(a===ano?'selected':'')+'>'+a+'</option>').join('');
+  const mes=filtroMes,ano=filtroAno;
   const ll=db.lancamentos.filter(l=>{const d=new Date(l.data+'T12:00:00');return d.getMonth()+1===mes&&d.getFullYear()===ano;});
   const ent=ll.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
   const sai=ll.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
@@ -268,36 +298,32 @@ function renderDashboard(){
   const ina=db.mensalidades.filter(m=>m.status==='pendente'&&(m.ano<ano||(m.ano===ano&&m.mes<mes)));
   let al='';
   if(ina.length>0)al+='<div class="alert alert-vermelho">&#9888; '+ina.length+' mensalidade(s) em atraso de meses anteriores</div>';
-  if(pe.length>0)al+='<div class="alert alert-amarelo">&#128336; '+pe.length+' mensalidade(s) pendente(s) em '+mesNome(mes)+'</div>';
-  if(!al)al='<div class="alert alert-verde">&#10003; Tudo em dia! Nenhuma pendencia em '+mesNome(mes)+'/'+ano+'.</div>';
+  if(pe.length>0)al+='<div class="alert alert-amarelo">&#128336; '+pe.length+' mensalidade(s) pendente(s) em '+mesNome(mes)+'/'+ano+'</div>';
+  if(!al)al='<div class="alert alert-verde">&#10003; Tudo em dia em '+mesNome(mes)+'/'+ano+'!</div>';
   const ult=[...ll].sort((a,b)=>b.data.localeCompare(a.data)).slice(0,5);
   const ultHTML=ult.length===0?'<tr><td colspan="4"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':ult.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page">'+al+'<div class="grid-4 mb-6"><div class="metric"><div class="metric-label">Entradas do mes</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Saidas do mes</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(res>=0?'positivo':'negativo')+'">'+fmt(res)+'</div><div class="metric-sub">'+(res>=0?'Superavit':'Deficit')+'</div></div><div class="metric"><div class="metric-label">Mensalidades</div><div class="metric-value neutro">'+pg.length+'/'+mm.length+'</div><div class="metric-sub">'+fmt(recebMens)+' de '+fmt(totalMens)+'</div></div></div><div class="card mb-6"><div class="section-header"><div class="section-title">Periodo</div><div style="display:flex;gap:8px;"><select class="form-control" style="width:auto;" onchange="filtroDashMes=+this.value;renderDashboard();">'+mO+'</select><select class="form-control" style="width:auto;" onchange="filtroDashAno=+this.value;renderDashboard();">'+aO+'</select></div></div></div><div class="grid-2 mb-6"><div class="card"><div class="section-header"><div class="section-title">Mensalidades - '+mesNome(mes)+'</div><button class="btn btn-sm btn-outline" onclick="navigate(\'mensalidades\')">Ver todas</button></div><div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="text-sm">'+pct+'% recebidas</span><span class="text-sm">'+pg.length+' de '+mm.length+'</span></div><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%;background:var(--verde);"></div></div></div><div style="display:flex;gap:12px;"><div style="flex:1;text-align:center;padding:12px;background:var(--verde-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--verde);">'+pg.length+'</div><div class="text-muted">Pagos</div></div><div style="flex:1;text-align:center;padding:12px;background:var(--vermelho-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--vermelho);">'+pe.length+'</div><div class="text-muted">Pendentes</div></div></div></div><div class="card"><div class="section-title mb-4">Acoes rapidas</div><div class="grid-2" style="gap:10px;"><div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div><div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div><div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div><div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div></div></div></div><div class="card"><div class="section-header"><div class="section-title">Lancamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page">'+al+'<div class="grid-4 mb-6"><div class="metric"><div class="metric-label">Entradas do mes</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Saidas do mes</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(res>=0?'positivo':'negativo')+'">'+fmt(res)+'</div><div class="metric-sub">'+(res>=0?'Superavit':'Deficit')+'</div></div><div class="metric"><div class="metric-label">Mensalidades</div><div class="metric-value neutro">'+pg.length+'/'+mm.length+'</div><div class="metric-sub">'+fmt(recebMens)+' de '+fmt(totalMens)+'</div></div></div><div class="grid-2 mb-6"><div class="card"><div class="section-header"><div class="section-title">Mensalidades - '+mesNome(mes)+'</div><button class="btn btn-sm btn-outline" onclick="navigate(\'mensalidades\')">Ver todas</button></div><div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="text-sm">'+pct+'% recebidas</span><span class="text-sm">'+pg.length+' de '+mm.length+'</span></div><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%;background:var(--verde);"></div></div></div><div style="display:flex;gap:12px;"><div style="flex:1;text-align:center;padding:12px;background:var(--verde-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--verde);">'+pg.length+'</div><div class="text-muted">Pagos</div></div><div style="flex:1;text-align:center;padding:12px;background:var(--vermelho-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--vermelho);">'+pe.length+'</div><div class="text-muted">Pendentes</div></div></div></div><div class="card"><div class="section-title mb-4">Acoes rapidas</div><div class="grid-2" style="gap:10px;"><div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div><div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div><div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div><div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div></div></div></div><div class="card"><div class="section-header"><div class="section-title">Lancamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div></div>';
 }
 
 // MENSALIDADES
 function pgMensalidades(){
-  filtroMesMens=filtroMesMens||getMes();
-  filtroAnoMens=filtroAnoMens||getAno();
   document.getElementById('topbarActions').innerHTML='<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mes</button>';
   renderMens();
 }
 function renderMens(){
-  const mes=filtroMesMens,ano=filtroAnoMens;
+  const mes=filtroMes,ano=filtroAno;
   const lista=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
   const pg=lista.filter(m=>m.status==='pago');
   const pe=lista.filter(m=>m.status==='pendente');
   const totalV=lista.reduce((a,m)=>a+m.valor,0);
   const recV=pg.reduce((a,m)=>a+m.valor,0);
-  const mO=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===mes?'selected':'')+'>'+mesNome(i+1)+'</option>').join('');
-  const aO=[ano-1,ano,ano+1].map(a=>'<option value="'+a+'" '+(a===ano?'selected':'')+'>'+a+'</option>').join('');
   let lin='';
   if(lista.length===0){lin='<tr><td colspan="5"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em "Gerar mes" para criar automaticamente</p></div></td></tr>';}
   else{[...pe,...pg].forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};lin+='<tr><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';});}
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhadores</div></div><div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div><div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div></div><div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades</div><div style="display:flex;gap:8px;"><select class="form-control" style="width:auto;" onchange="filtroMesMens=+this.value;renderMens();">'+mO+'</select><select class="form-control" style="width:auto;" onchange="filtroAnoMens=+this.value;renderMens();">'+aO+'</select></div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhadores</div></div><div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div><div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div></div><div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function gerarMes(){
-  const mes=filtroMesMens||getMes(),ano=filtroAnoMens||getAno();
+  const mes=filtroMes,ano=filtroAno;
   const ativos=db.trabalhadores.filter(t=>t.ativo);
   if(!ativos.length){alert('Nenhum trabalhador ativo. Cadastre primeiro.');navigate('trabalhadores');return;}
   const ja=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
@@ -341,23 +367,18 @@ function estornar(id){
 
 // LANCAMENTOS
 function pgLancamentos(){
-  filtroTipoLanc=filtroTipoLanc||'todos';
-  filtroMesLanc=filtroMesLanc||getMes();
-  filtroAnoLanc=filtroAnoLanc||getAno();
   document.getElementById('topbarActions').innerHTML='<button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button>';
   renderLanc();
 }
 function renderLanc(){
-  const mes=filtroMesLanc,ano=filtroAnoLanc;
+  const mes=filtroMes,ano=filtroAno;
   let lista=db.lancamentos.filter(l=>{const d=new Date(l.data+'T12:00:00');return d.getMonth()+1===mes&&d.getFullYear()===ano;});
   if(filtroTipoLanc!=='todos')lista=lista.filter(l=>l.tipo===filtroTipoLanc);
   lista.sort((a,b)=>b.data.localeCompare(a.data));
   const ent=lista.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
   const sai=lista.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
-  const mO=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===mes?'selected':'')+'>'+mesNome(i+1)+'</option>').join('');
-  const aO=[ano-1,ano,ano+1].map(a=>'<option value="'+a+'" '+(a===ano?'selected':'')+'>'+a+'</option>').join('');
-  const lin=lista.length===0?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento neste periodo</p></div></td></tr>':lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td>'+(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><button class="btn btn-sm btn-ghost" onclick="excluirLanc(\''+l.id+'\')">&#128465;</button></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="filtroTipoLanc=\'todos\';renderLanc();">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="filtroTipoLanc=\'receita\';renderLanc();">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="filtroTipoLanc=\'despesa\';renderLanc();">Despesas</button></div><div style="display:flex;gap:8px;"><select class="form-control" style="width:auto;" onchange="filtroMesLanc=+this.value;renderLanc();">'+mO+'</select><select class="form-control" style="width:auto;" onchange="filtroAnoLanc=+this.value;renderLanc();">'+aO+'</select></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  const lin=lista.length===0?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td>'+(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><button class="btn btn-sm btn-ghost" onclick="excluirLanc(\''+l.id+'\')">&#128465;</button></td></tr>').join('');
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="filtroTipoLanc=\'todos\';renderLanc();">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="filtroTipoLanc=\'receita\';renderLanc();">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="filtroTipoLanc=\'despesa\';renderLanc();">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function abrirNovoLanc(tipo){
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
@@ -585,6 +606,7 @@ function carregarExemplos(){
 // expõe funções no window pois o script é type=module
 Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,
+  alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,darBaixa,confirmarBaixa,estornar,
@@ -601,8 +623,9 @@ async function init(){
   carregarExemplos();
   const agora=new Date();
   document.getElementById('mesAnoAtual').textContent=mesNome(agora.getMonth()+1)+' de '+agora.getFullYear();
-  filtroMesMens=getMes();filtroAnoMens=getAno();
-  filtroTipoLanc='todos';filtroMesLanc=getMes();filtroAnoLanc=getAno();
+  filtroMes=getMes();filtroAno=getAno();
+  filtroTipoLanc='todos';
+  iniciarFiltroGlobal();
   navigate('dashboard');
 }
 init();
