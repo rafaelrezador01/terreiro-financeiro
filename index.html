@@ -158,14 +158,58 @@ tr:last-child td{border-bottom:none;}
     <div class="modal-footer" id="modalFooter"></div>
   </div>
 </div>
-<script>
-const DB_KEY='axe_financeiro_v1';
+<script type="module">
+// Firebase SDK
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import{getDatabase,ref,set,onValue}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const firebaseConfig={
+  apiKey:"AIzaSyDxKJOv83NnVLrwDHgHBOyp00yMDobCLoY",
+  authDomain:"tuluca---financeiro.firebaseapp.com",
+  databaseURL:"https://tuluca---financeiro-default-rtdb.firebaseio.com",
+  projectId:"tuluca---financeiro",
+  storageBucket:"tuluca---financeiro.firebasestorage.app",
+  messagingSenderId:"284671942894",
+  appId:"1:284671942894:web:077bdc24ba801aa3f113ff"
+};
+
+const firebaseApp=initializeApp(firebaseConfig);
+const firebaseDB=getDatabase(firebaseApp);
+const dbRef=ref(firebaseDB,'axe_financeiro');
+
 let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[]};
 let paginaAtual='dashboard';
 let filtroMesMens,filtroAnoMens,filtroTipoLanc,filtroMesLanc,filtroAnoLanc;
+let _iniciado=false;
 
-function salvarDB(){localStorage.setItem(DB_KEY,JSON.stringify(db));}
-function carregarDB(){const s=localStorage.getItem(DB_KEY);if(s){try{db={...db,...JSON.parse(s)};}catch(e){}}}
+// Salva tudo no Firebase
+function salvarDB(){
+  set(dbRef,JSON.parse(JSON.stringify(db)));
+}
+
+// Carrega do Firebase uma vez e escuta mudanças em tempo real
+function carregarDB(){
+  return new Promise(resolve=>{
+    onValue(dbRef,(snapshot)=>{
+      const data=snapshot.val();
+      if(data){
+        db.trabalhadores=data.trabalhadores||[];
+        db.mensalidades=data.mensalidades||[];
+        db.lancamentos=data.lancamentos||[];
+        db.rifas=data.rifas||[];
+        db.cantina=data.cantina||[];
+      }
+      if(!_iniciado){
+        _iniciado=true;
+        resolve();
+      } else {
+        // atualização em tempo real de outro usuário — re-renderiza a aba atual
+        const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios};
+        if(pages[paginaAtual])pages[paginaAtual]();
+      }
+    });
+  });
+}
 function fmt(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);}
 function fmtData(d){if(!d)return'-';const[y,m,dia]=d.split('-');return dia+'/'+m+'/'+y;}
 function mesNome(m){return['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m-1];}
@@ -493,7 +537,8 @@ function pgRelatorios(){
 
 // DADOS DE EXEMPLO
 function carregarExemplos(){
-  if(db.trabalhadores.length>0)return;
+  // só carrega exemplos se o banco estiver completamente vazio
+  if(db.trabalhadores.length>0||db.lancamentos.length>0)return;
   const ts=[
     {id:uid(),nome:'Maria da Conceicao',apelido:'Filha de Iemanja',telefone:'(11) 98765-4321',valorMensalidade:60,dataIngresso:'2022-03-15',ativo:true},
     {id:uid(),nome:'Joao Pedro Santos',apelido:'Filho de Oxossi',telefone:'(11) 97654-3210',valorMensalidade:50,dataIngresso:'2021-06-10',ativo:true},
@@ -520,8 +565,11 @@ function carregarExemplos(){
   salvarDB();
 }
 
-function init(){
-  carregarDB();carregarExemplos();
+async function init(){
+  // mostra tela de carregamento
+  document.getElementById('pageContent').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--texto3);"><div style="font-size:32px;">&#9789;</div><div style="font-size:15px;">Conectando ao banco de dados...</div></div>';
+  await carregarDB();
+  carregarExemplos();
   const agora=new Date();
   document.getElementById('mesAnoAtual').textContent=mesNome(agora.getMonth()+1)+' de '+agora.getFullYear();
   filtroMesMens=getMes();filtroAnoMens=getAno();
