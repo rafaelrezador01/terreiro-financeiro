@@ -410,7 +410,16 @@ function salvarTrab(id){
   if(id){
     trabalhador=db.trabalhadores.find(x=>x.id===id);
     if(!trabalhador){alert('Trabalhador nao encontrado.');return;}
+    const valorAntigo=trabalhador.valorMensalidade;
     Object.assign(trabalhador,dados);
+    // se o valor da mensalidade mudou, atualiza todas as mensalidades PENDENTES deste trabalhador
+    if(valorAntigo!==trabalhador.valorMensalidade){
+      db.mensalidades.forEach(m=>{
+        if(m.trabalhadorId===trabalhador.id&&m.status==='pendente'){
+          m.valor=trabalhador.valorMensalidade;
+        }
+      });
+    }
   } else {
     trabalhador={id:uid(),...dados};
     db.trabalhadores.push(trabalhador);
