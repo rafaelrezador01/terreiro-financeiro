@@ -121,21 +121,21 @@ tr:last-child td{border-bottom:none;}
 <div class="overlay-sidebar" id="overlayBg" onclick="closeSidebar()" style="display:none;"></div>
 <div class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <div class="sidebar-logo">&#9789; Financeiro | TULUCA </div>
-    <div class="sidebar-sub">Sistema de Gestão</div>
+    <div class="sidebar-logo">&#9789; Axe Financeiro</div>
+    <div class="sidebar-sub">Sistema de gestao</div>
   </div>
   <nav class="sidebar-nav">
     <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')"><span class="nav-icon">&#127968;</span> Dashboard</div>
     <div class="nav-item" data-page="mensalidades" onclick="navigate('mensalidades')"><span class="nav-icon">&#128101;</span> Mensalidades</div>
-    <div class="nav-item" data-page="lancamentos" onclick="navigate('lancamentos')"><span class="nav-icon">&#128218;</span> Lançamentos</div>
+    <div class="nav-item" data-page="lancamentos" onclick="navigate('lancamentos')"><span class="nav-icon">&#128218;</span> Lancamentos</div>
     <div class="nav-item" data-page="cantina" onclick="navigate('cantina')"><span class="nav-icon">&#127859;</span> Cantina</div>
     <div class="nav-item" data-page="rifas" onclick="navigate('rifas')"><span class="nav-icon">&#127903;</span> Rifas e Eventos</div>
     <div class="nav-item" data-page="trabalhadores" onclick="navigate('trabalhadores')"><span class="nav-icon">&#127807;</span> Trabalhadores</div>
-    <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatórios</div>
+    <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatorios</div>
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.0 - Tenda de Umbanda Luz e Caridade</div>
+    <div style="margin-top:4px;">v1.0 - Axe e forca</div>
   </div>
 </div>
 <div class="main">
@@ -334,15 +334,36 @@ function renderMens(){
   }
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhador(es) valido(s)</div></div><div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div><div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div></div><div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th></tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
 }
-// compara períodos de forma segura: retorna true se o trabalhador já existia no mês/ano
-function periodoParaNum(mes,ano){return ano*100+mes;} // ex: 2026*100+3 = 202603
+// converte mês+ano para número comparável: 2026*100+12 = 202612
+function periodoParaNum(mes,ano){return ano*100+mes;}
+// converte string "YYYY-MM" para número: "2026-12" => 202612
+function periodoStrParaNum(str){
+  if(!str||typeof str!=='string')return 0;
+  const p=str.split('-');
+  if(p.length<2)return 0;
+  const a=+p[0],m=+p[1];
+  if(!a||!m)return 0;
+  return a*100+m;
+}
+// retorna a competência de entrada do trabalhador como número comparável
+function competenciaEntradaNum(t){
+  // usa competenciaEntrada (YYYY-MM) como fonte primária
+  if(t.competenciaEntrada){
+    const n=periodoStrParaNum(t.competenciaEntrada);
+    if(n>0)return n;
+  }
+  // fallback: extrai mês/ano de dataIngresso (YYYY-MM-DD)
+  if(t.dataIngresso&&t.dataIngresso.length>=7){
+    const n=periodoStrParaNum(t.dataIngresso.substring(0,7));
+    if(n>0)return n;
+  }
+  // sem nenhuma data válida: retorna 0 (sempre existia — compatibilidade com legado)
+  return 0;
+}
 function trabExisteNoPeriodo(t,mes,ano){
-  if(!t.dataIngresso)return true; // sem data = considera sempre existente (compatibilidade)
-  const partes=t.dataIngresso.split('-');
-  if(partes.length<2)return true;
-  const ay=+partes[0],am=+partes[1];
-  if(!ay||!am)return true;
-  return periodoParaNum(am,ay)<=periodoParaNum(mes,ano);
+  const entrada=competenciaEntradaNum(t);
+  if(entrada===0)return true; // legado sem data: considera sempre existente
+  return entrada<=periodoParaNum(mes,ano);
 }
 function trabAtivoNoPeriodo(t){
   return t.ativo!==false;
@@ -351,13 +372,18 @@ function trabAtivoNoPeriodo(t){
 function trabsValidosParaPeriodo(mes,ano){
   return db.trabalhadores.filter(t=>trabExisteNoPeriodo(t,mes,ano)&&trabAtivoNoPeriodo(t));
 }
-// migração segura: garante que todos os trabalhadores tenham dataIngresso
+// migração segura: garante competenciaEntrada em todos os trabalhadores
 function migrarTrabalhadores(){
   let alterou=false;
-  const fallback=hoje(); // usa hoje como fallback para registros antigos sem data
   db.trabalhadores.forEach(t=>{
-    if(!t.dataIngresso){
-      t.dataIngresso=fallback;
+    if(!t.competenciaEntrada){
+      // se tem dataIngresso válida, deriva a competencia dela
+      if(t.dataIngresso&&t.dataIngresso.length>=7){
+        t.competenciaEntrada=t.dataIngresso.substring(0,7);
+      } else {
+        // legado sem nenhuma data: marca com flag especial para sempre existir
+        t.competenciaEntrada='legado';
+      }
       alterou=true;
     }
   });
@@ -479,7 +505,12 @@ function renderTrabs(){
     }).join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-azul mb-6" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);">&#128197; Exibindo periodo: <strong>'+mesNome(mes)+'/'+ano+'</strong> — '+validosNoPeriodo.length+' trabalhador(es) ativo(s) neste periodo</div><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total cadastrado</div><div class="metric-value neutro">'+todos.length+'</div></div><div class="metric"><div class="metric-label">Validos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div><div class="metric"><div class="metric-label">Mensalidade media</div><div class="metric-value neutro">'+fmt(validosNoPeriodo.length?validosNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/validosNoPeriodo.length:0)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div><div class="table-wrap"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no periodo</th><th>Acoes</th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
-function formTrab(t){return '<div class="form-row"><div class="form-group"><label class="form-label">Nome completo *</label><input type="text" class="form-control" id="tNome" value="'+(t.nome||'')+'" placeholder="Nome do trabalhador"></div><div class="form-group"><label class="form-label">Apelido / nome de santo</label><input type="text" class="form-control" id="tApelido" value="'+(t.apelido||'')+'" placeholder="Ex: Filho de Ogum"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Telefone</label><input type="tel" class="form-control" id="tTel" value="'+(t.telefone||'')+'" placeholder="(11) 99999-9999"></div><div class="form-group"><label class="form-label">Mensalidade (R$)</label><input type="number" class="form-control" id="tValor" value="'+(t.valorMensalidade||50)+'" min="0" step="0.01"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Data de ingresso</label><input type="date" class="form-control" id="tData" value="'+(t.dataIngresso||hoje())+'"></div><div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="tAtivo" '+(t.ativo!==false?'checked':'')+' style="width:18px;height:18px;accent-color:var(--verde);"><span class="form-label" style="margin:0;">Trabalhador ativo</span></label></div></div>';}
+function formTrab(t){
+  const compInfo=t.competenciaEntrada&&t.competenciaEntrada!=='legado'
+    ?'<div class="form-group"><label class="form-label">Competencia de entrada</label><input type="text" class="form-control" value="'+t.competenciaEntrada+'" readonly style="background:var(--creme);color:var(--texto3);cursor:default;" title="Periodo em que o trabalhador foi cadastrado. Nao pode ser alterado."></div>'
+    :'';
+  return '<div class="form-row"><div class="form-group"><label class="form-label">Nome completo *</label><input type="text" class="form-control" id="tNome" value="'+(t.nome||'')+'" placeholder="Nome do trabalhador"></div><div class="form-group"><label class="form-label">Apelido / nome de santo</label><input type="text" class="form-control" id="tApelido" value="'+(t.apelido||'')+'" placeholder="Ex: Filho de Ogum"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Telefone</label><input type="tel" class="form-control" id="tTel" value="'+(t.telefone||'')+'" placeholder="(11) 99999-9999"></div><div class="form-group"><label class="form-label">Mensalidade (R$)</label><input type="number" class="form-control" id="tValor" value="'+(t.valorMensalidade||50)+'" min="0" step="0.01"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Data de ingresso</label><input type="date" class="form-control" id="tData" value="'+(t.dataIngresso||hoje())+'"></div><div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="tAtivo" '+(t.ativo!==false?'checked':'')+' style="width:18px;height:18px;accent-color:var(--verde);"><span class="form-label" style="margin:0;">Trabalhador ativo</span></label></div></div>'+compInfo;
+}
 function novoTrab(){openModal('Novo trabalhador',formTrab({}),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab()">Salvar</button>');}
 function editTrab(id){const t=db.trabalhadores.find(x=>x.id===id);if(!t)return;openModal('Editar trabalhador',formTrab(t),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab(\''+id+'\')">Salvar</button>');}
 function salvarTrab(id){
@@ -511,8 +542,11 @@ function salvarTrab(id){
         }
       });
     }
+    // ao editar, NÃO altera competenciaEntrada (preserva histórico)
   } else {
-    trabalhador={id:uid(),...dados};
+    // ao criar: registra competenciaEntrada = período global ativo no formato YYYY-MM
+    const compEntrada=String(filtroAno)+'-'+String(filtroMes).padStart(2,'0');
+    trabalhador={id:uid(),...dados,competenciaEntrada:compEntrada};
     db.trabalhadores.push(trabalhador);
   }
 
@@ -667,6 +701,7 @@ Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabsValidosParaPeriodo,migrarTrabalhadores,
+  periodoParaNum,periodoStrParaNum,competenciaEntradaNum,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,darBaixa,confirmarBaixa,estornar,
