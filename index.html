@@ -194,9 +194,14 @@ Object.defineProperty(window,'filtroDashMes',{get:()=>filtroMes,set:v=>{filtroMe
 Object.defineProperty(window,'filtroDashAno',{get:()=>filtroAno,set:v=>{filtroAno=v;}});
 let _iniciado=false;
 
+let _salvandoLocalmente=false;
+
 // Salva tudo no Firebase
 function salvarDB(){
-  set(dbRef,JSON.parse(JSON.stringify(db)));
+  _salvandoLocalmente=true;
+  set(dbRef,JSON.parse(JSON.stringify(db))).finally(()=>{
+    setTimeout(()=>{_salvandoLocalmente=false;},1500);
+  });
 }
 
 // Carrega do Firebase uma vez e escuta mudanças em tempo real
@@ -214,8 +219,8 @@ function carregarDB(){
       if(!_iniciado){
         _iniciado=true;
         resolve();
-      } else {
-        // atualização em tempo real de outro usuário — re-renderiza a aba atual
+      } else if(!_salvandoLocalmente){
+        // só re-renderiza se a mudança veio de outro usuário
         const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios};
         if(pages[paginaAtual])pages[paginaAtual]();
       }
