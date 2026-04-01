@@ -107,14 +107,51 @@ tr:last-child td{border-bottom:none;}
   .sidebar.open{transform:translateX(0);}
   .main{margin-left:0;}
   .hamburger{display:flex;}
-  .content{padding:16px;}
+  .content{padding:12px;}
   .grid-4,.grid-3,.grid-2{grid-template-columns:1fr 1fr;}
   .form-row{grid-template-columns:1fr;}
-  .topbar{padding:12px 16px;}
-  .topbar-title{font-size:18px;}
+  .topbar{padding:10px 12px;flex-wrap:wrap;gap:8px;}
+  .topbar-title{font-size:16px;}
+  .topbar-actions{order:3;width:100%;display:flex;gap:6px;}
+  .topbar-actions .btn{flex:1;justify-content:center;padding:8px 10px;font-size:13px;}
+  #filtroGlobal{order:2;margin-left:auto;}
+  #filtroGlobal select{font-size:12px;padding:6px 8px;}
+  .metric{padding:14px 16px;}
+  .metric-value{font-size:22px;}
+  .section-header{flex-direction:column;align-items:flex-start;gap:8px;}
+  .section-header .btn{width:100%;justify-content:center;}
+  .chip-group{gap:6px;}
+  .chip{padding:5px 10px;font-size:12px;}
+  table{font-size:13px;}
+  th,td{padding:10px 10px;}
+  .modal{margin:0 8px;}
+  .modal-body{padding:16px;}
+  .modal-header{padding:16px 16px 0;}
+  .modal-footer{padding:0 16px 16px;flex-direction:column;}
+  .modal-footer .btn{width:100%;justify-content:center;}
+  .btn{font-size:13px;}
+  .btn-sm{font-size:12px;padding:5px 10px;}
+  .card{padding:16px;}
+  .quick-action{padding:14px 10px;}
+  .quick-action-icon{font-size:20px;}
+  .quick-action-label{font-size:12px;}
 }
-@media(max-width:480px){.grid-4,.grid-3,.grid-2{grid-template-columns:1fr;}}
-@media print{.sidebar,.topbar,.btn,.hamburger{display:none!important;}.main{margin-left:0;}}
+@media(max-width:480px){
+  .grid-4,.grid-3,.grid-2{grid-template-columns:1fr;}
+  .content{padding:10px;}
+  .topbar{padding:8px 10px;}
+  .topbar-title{font-size:15px;}
+  /* tabelas: esconde colunas menos importantes */
+  .table-wrap table th:nth-child(4),
+  .table-wrap table td:nth-child(4){display:none;}
+  .metric-value{font-size:20px;}
+  .section-title{font-size:16px;}
+  /* dashboard: 5 cards em coluna única */
+  [style*="grid-template-columns:repeat(5,1fr)"]{grid-template-columns:1fr 1fr!important;}
+  .alert{font-size:12px;padding:10px 12px;}
+  #filtroGlobal select{font-size:11px;padding:5px 6px;}
+}
+@media print{.sidebar,.topbar,.btn,.hamburger,#filtroGlobal{display:none!important;}.main{margin-left:0;}}
 </style>
 </head>
 <body>
@@ -140,15 +177,15 @@ tr:last-child td{border-bottom:none;}
 </div>
 <div class="main">
   <div class="topbar">
-    <div style="display:flex;align-items:center;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
       <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
-      <div class="topbar-title" id="pageTitle">Dashboard</div>
+      <div class="topbar-title" id="pageTitle" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Dashboard</div>
     </div>
-    <div class="topbar-actions" id="topbarActions"></div>
-    <div id="filtroGlobal" style="display:flex;align-items:center;gap:8px;margin-left:16px;">
+    <div id="filtroGlobal" style="display:flex;align-items:center;gap:6px;">
       <select class="form-control" id="selectMesGlobal" style="width:auto;font-size:13px;" onchange="alterarPeriodoGlobal()"></select>
       <select class="form-control" id="selectAnoGlobal" style="width:auto;font-size:13px;" onchange="alterarPeriodoGlobal()"></select>
     </div>
+    <div class="topbar-actions" id="topbarActions"></div>
   </div>
   <div class="content" id="pageContent"></div>
 </div>
