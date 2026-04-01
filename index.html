@@ -534,6 +534,7 @@ function estornar(id){
 }
 
 // LANCAMENTOS
+function setFiltroTipoLanc(v){filtroTipoLanc=v;renderLanc();}
 function pgLancamentos(){
   document.getElementById('topbarActions').innerHTML='<button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button>';
   renderLanc();
@@ -546,7 +547,7 @@ function renderLanc(){
   const ent=lista.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
   const sai=lista.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
   const lin=lista.length===0?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td>'+(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><button class="btn btn-sm btn-ghost" onclick="excluirLanc(\''+l.id+'\')">&#128465;</button></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="filtroTipoLanc=\'todos\';renderLanc();">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="filtroTipoLanc=\'receita\';renderLanc();">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="filtroTipoLanc=\'despesa\';renderLanc();">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function abrirNovoLanc(tipo){
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
@@ -800,7 +801,7 @@ Object.assign(window,{
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,darBaixa,confirmarBaixa,estornar,
-  abrirNovoLanc,salvarLanc,excluirLanc,
+  abrirNovoLanc,salvarLanc,excluirLanc,setFiltroTipoLanc,
   novoTrab,editTrab,salvarTrab,delTrab,
   novaCantina,salvarCantina,delCantina,
   novaRifa,salvarRifa,delRifa,
