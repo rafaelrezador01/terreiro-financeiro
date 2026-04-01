@@ -281,14 +281,75 @@ function openModal(title,body,footer){
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open');}
 document.getElementById('modalOverlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
 
+
+// ── FLUXO DE CAIXA ACUMULADO ──────────────────────────────────────────────
+// Calcula entradas e saídas de um mês/ano específico a partir de db.lancamentos
+function totaisMes(mes,ano){
+  const ll=db.lancamentos.filter(l=>{
+    const d=new Date(l.data+'T12:00:00');
+    return d.getMonth()+1===mes&&d.getFullYear()===ano;
+  });
+  const ent=ll.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
+  const sai=ll.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
+  return{ent,sai};
+}
+
+// Retorna o período (mes,ano) imediatamente anterior
+function periodoAnterior(mes,ano){
+  return mes===1?{mes:12,ano:ano-1}:{mes:mes-1,ano};
+}
+
+// Calcula o saldo inicial de um mês = saldo final acumulado de todos os meses anteriores
+// Percorre do mês mais antigo com dados até o mês anterior ao solicitado
+function calcularSaldoInicial(mes,ano){
+  if(!db.lancamentos.length)return 0;
+
+  // encontra o mês/ano mais antigo com lançamentos
+  let minNum=Infinity;
+  db.lancamentos.forEach(l=>{
+    const d=new Date(l.data+'T12:00:00');
+    const n=periodoParaNum(d.getMonth()+1,d.getFullYear());
+    if(n<minNum)minNum=n;
+  });
+  if(minNum===Infinity)return 0;
+
+  const alvoNum=periodoParaNum(mes,ano);
+  if(minNum>=alvoNum)return 0; // não há meses anteriores com dados
+
+  // acumula saldo desde o mês mais antigo até o mês anterior ao solicitado
+  let saldo=0;
+  let curNum=minNum;
+  while(curNum<alvoNum){
+    const cm=curNum%100;
+    const ca=Math.floor(curNum/100);
+    const{ent,sai}=totaisMes(cm,ca);
+    saldo+=ent-sai;
+    // avança para o próximo mês
+    const prox=cm===12?{mes:1,ano:ca+1}:{mes:cm+1,ano:ca};
+    const proxNum=periodoParaNum(prox.mes,prox.ano);
+    // se o próximo mês não tiver dados e ainda não chegamos no alvo, pula
+    // (meses sem lançamentos têm resultado 0, não alteram o saldo)
+    curNum=proxNum;
+  }
+  return saldo;
+}
+
+// Retorna o fluxo completo do mês: saldo inicial, entradas, saídas, resultado, saldo final
+function fluxoMes(mes,ano){
+  const{ent,sai}=totaisMes(mes,ano);
+  const saldoInicial=calcularSaldoInicial(mes,ano);
+  const resultado=ent-sai;
+  const saldoFinal=saldoInicial+resultado;
+  return{saldoInicial,ent,sai,resultado,saldoFinal};
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // DASHBOARD
 function pgDashboard(){renderDashboard();}
 function renderDashboard(){
   const mes=filtroMes,ano=filtroAno;
-  const ll=db.lancamentos.filter(l=>{const d=new Date(l.data+'T12:00:00');return d.getMonth()+1===mes&&d.getFullYear()===ano;});
-  const ent=ll.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
-  const sai=ll.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
-  const res=ent-sai;
+  const{saldoInicial,ent,sai,resultado,saldoFinal}=fluxoMes(mes,ano);
+
   // mensalidades: apenas de trabalhadores válidos no período
   const idsValidos=new Set(trabsValidosParaPeriodo(mes,ano).map(t=>t.id));
   const mm=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
@@ -298,13 +359,45 @@ function renderDashboard(){
   const totalMens=mm.reduce((a,m)=>a+m.valor,0);
   const pct=mm.length?Math.round(pg.length/mm.length*100):0;
   const ina=db.mensalidades.filter(m=>m.status==='pendente'&&idsValidos.has(m.trabalhadorId)&&(m.ano<ano||(m.ano===ano&&m.mes<mes)));
+
   let al='';
   if(ina.length>0)al+='<div class="alert alert-vermelho">&#9888; '+ina.length+' mensalidade(s) em atraso de meses anteriores</div>';
   if(pe.length>0)al+='<div class="alert alert-amarelo">&#128336; '+pe.length+' mensalidade(s) pendente(s) em '+mesNome(mes)+'/'+ano+'</div>';
   if(!al)al='<div class="alert alert-verde">&#10003; Tudo em dia em '+mesNome(mes)+'/'+ano+'!</div>';
+
+  const ll=db.lancamentos.filter(l=>{const d=new Date(l.data+'T12:00:00');return d.getMonth()+1===mes&&d.getFullYear()===ano;});
   const ult=[...ll].sort((a,b)=>b.data.localeCompare(a.data)).slice(0,5);
-  const ultHTML=ult.length===0?'<tr><td colspan="4"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':ult.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page">'+al+'<div class="grid-4 mb-6"><div class="metric"><div class="metric-label">Entradas do mes</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Saidas do mes</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(res>=0?'positivo':'negativo')+'">'+fmt(res)+'</div><div class="metric-sub">'+(res>=0?'Superavit':'Deficit')+'</div></div><div class="metric"><div class="metric-label">Mensalidades</div><div class="metric-value neutro">'+pg.length+'/'+mm.length+'</div><div class="metric-sub">'+fmt(recebMens)+' de '+fmt(totalMens)+'</div></div></div><div class="grid-2 mb-6"><div class="card"><div class="section-header"><div class="section-title">Mensalidades - '+mesNome(mes)+'</div><button class="btn btn-sm btn-outline" onclick="navigate(\'mensalidades\')">Ver todas</button></div><div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="text-sm">'+pct+'% recebidas</span><span class="text-sm">'+pg.length+' de '+mm.length+'</span></div><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%;background:var(--verde);"></div></div></div><div style="display:flex;gap:12px;"><div style="flex:1;text-align:center;padding:12px;background:var(--verde-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--verde);">'+pg.length+'</div><div class="text-muted">Pagos</div></div><div style="flex:1;text-align:center;padding:12px;background:var(--vermelho-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--vermelho);">'+pe.length+'</div><div class="text-muted">Pendentes</div></div></div></div><div class="card"><div class="section-title mb-4">Acoes rapidas</div><div class="grid-2" style="gap:10px;"><div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div><div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div><div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div><div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div></div></div></div><div class="card"><div class="section-header"><div class="section-title">Lancamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div></div>';
+  const ultHTML=ult.length===0
+    ?'<tr><td colspan="4"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
+    :ult.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td></tr>').join('');
+
+  // cards de fluxo de caixa: 5 métricas
+  const metricsHTML=
+    '<div class="grid-4 mb-6" style="grid-template-columns:repeat(5,1fr);">'+
+      '<div class="metric"><div class="metric-label">Saldo inicial</div><div class="metric-value '+(saldoInicial>=0?'positivo':'negativo')+'">'+fmt(saldoInicial)+'</div><div class="metric-sub">Vindo de '+mesNome(mes===1?12:mes-1)+'/'+(mes===1?ano-1:ano)+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Resultado do mes</div><div class="metric-value '+(resultado>=0?'positivo':'negativo')+'">'+fmt(resultado)+'</div><div class="metric-sub">'+(resultado>=0?'Superavit':'Deficit')+'</div></div>'+
+      '<div class="metric" style="border:1.5px solid '+(saldoFinal>=0?'var(--verde)':'var(--vermelho)')+'"><div class="metric-label">Saldo final em caixa</div><div class="metric-value '+(saldoFinal>=0?'positivo':'negativo')+'">'+fmt(saldoFinal)+'</div><div class="metric-sub">Acumulado ate '+mesNome(mes)+'/'+ano+'</div></div>'+
+    '</div>';
+
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page">'+al+metricsHTML+
+    '<div class="grid-2 mb-6">'+
+      '<div class="card"><div class="section-header"><div class="section-title">Mensalidades - '+mesNome(mes)+'</div><button class="btn btn-sm btn-outline" onclick="navigate(\'mensalidades\')">Ver todas</button></div>'+
+        '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="text-sm">'+pct+'% recebidas</span><span class="text-sm">'+pg.length+' de '+mm.length+'</span></div><div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%;background:var(--verde);"></div></div></div>'+
+        '<div style="display:flex;gap:12px;"><div style="flex:1;text-align:center;padding:12px;background:var(--verde-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--verde);">'+pg.length+'</div><div class="text-muted">Pagos</div></div><div style="flex:1;text-align:center;padding:12px;background:var(--vermelho-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--vermelho);">'+pe.length+'</div><div class="text-muted">Pendentes</div></div>'+
+        '<div style="flex:1;text-align:center;padding:12px;background:var(--creme2);border-radius:var(--radius-sm);"><div style="font-size:14px;font-weight:600;color:var(--texto2);">'+fmt(recebMens)+' / '+fmt(totalMens)+'</div><div class="text-muted">Recebido</div></div></div>'+
+      '</div>'+
+      '<div class="card"><div class="section-title mb-4">Acoes rapidas</div><div class="grid-2" style="gap:10px;">'+
+        '<div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div>'+
+        '<div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div>'+
+        '<div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div>'+
+        '<div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div>'+
+      '</div></div>'+
+    '</div>'+
+    '<div class="card"><div class="section-header"><div class="section-title">Lancamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div>'+
+    '</div>';
 }
 
 // MENSALIDADES
@@ -645,14 +738,16 @@ function delRifa(id){confirmar('Excluir esta rifa/evento?',()=>{
 // RELATORIOS
 function pgRelatorios(){
   document.getElementById('topbarActions').innerHTML='<button class="btn btn-outline" onclick="window.print()">&#128438; Imprimir</button>';
-  const ano=getAno();
+  const ano=filtroAno;
+  let saldoAcum=calcularSaldoInicial(1,ano); // saldo inicial de janeiro do ano selecionado
   const resumos=Array.from({length:12},(_,i)=>{
     const m=i+1;
-    const ll=db.lancamentos.filter(l=>{const d=new Date(l.data+'T12:00:00');return d.getMonth()+1===m&&d.getFullYear()===ano;});
-    const e=ll.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
-    const s=ll.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
+    const{ent,sai}=totaisMes(m,ano);
+    const res=ent-sai;
+    const saldoInicial=saldoAcum;
+    saldoAcum+=res;
     const mm=db.mensalidades.filter(x=>x.mes===m&&x.ano===ano);
-    return{m,e,s,res:e-s,pg:mm.filter(x=>x.status==='pago').length,tot:mm.length};
+    return{m,e:ent,s:sai,res,saldoInicial,saldoFinal:saldoAcum,pg:mm.filter(x=>x.status==='pago').length,tot:mm.length};
   });
   const porCat={};
   db.lancamentos.forEach(l=>{const d=new Date(l.data+'T12:00:00');if(d.getFullYear()===ano){if(!porCat[l.categoria])porCat[l.categoria]={receita:0,despesa:0};porCat[l.categoria][l.tipo]+=l.valor;}});
@@ -660,10 +755,10 @@ function pgRelatorios(){
   db.mensalidades.filter(m=>m.status==='pendente').forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{nome:'?'};if(!ina[t.nome])ina[t.nome]=[];ina[t.nome].push(mesNome(m.mes)+'/'+m.ano);});
   const totalE=resumos.reduce((a,r)=>a+r.e,0);
   const totalS=resumos.reduce((a,r)=>a+r.s,0);
-  const linR=resumos.map(r=>'<tr><td><strong>'+mesNome(r.m)+'</strong></td><td class="valor-positivo">'+fmt(r.e)+'</td><td class="valor-negativo">'+fmt(r.s)+'</td><td class="'+(r.res>=0?'valor-positivo':'valor-negativo')+'">'+fmt(r.res)+'</td><td>'+r.pg+'/'+r.tot+'</td></tr>').join('');
+  const linR=resumos.map(r=>'<tr><td><strong>'+mesNome(r.m)+'</strong></td><td class="valor-positivo">'+fmt(r.e)+'</td><td class="valor-negativo">'+fmt(r.s)+'</td><td class="'+(r.res>=0?'valor-positivo':'valor-negativo')+'">'+fmt(r.res)+'</td><td class="'+(r.saldoFinal>=0?'valor-positivo':'valor-negativo')+'"><strong>'+fmt(r.saldoFinal)+'</strong></td><td>'+r.pg+'/'+r.tot+'</td></tr>').join('');
   const linC=Object.entries(porCat).map(([c,v])=>'<tr><td>'+c+'</td><td class="valor-positivo">'+fmt(v.receita)+'</td><td class="valor-negativo">'+fmt(v.despesa)+'</td><td class="'+(v.receita-v.despesa>=0?'valor-positivo':'valor-negativo')+'">'+fmt(v.receita-v.despesa)+'</td></tr>').join('')||'<tr><td colspan="4"><span class="text-muted">Sem dados</span></td></tr>';
   const linI=Object.keys(ina).length===0?'<tr><td colspan="2"><span class="text-muted">Nenhuma inadimplencia</span></td></tr>':Object.entries(ina).map(([n,ms])=>'<tr><td><strong>'+n+'</strong></td><td>'+ms.join(', ')+'</td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-verde mb-6">&#128202; Relatorio referente ao ano de '+ano+'</div><div class="card mb-6"><div class="section-header"><div class="section-title">Resumo mensal - '+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Mes</th><th>Entradas</th><th>Saidas</th><th>Resultado</th><th>Mensalidades</th></tr></thead><tbody>'+linR+'</tbody><tfoot><tr style="font-weight:600;background:var(--creme);"><td>TOTAL ANUAL</td><td class="valor-positivo">'+fmt(totalE)+'</td><td class="valor-negativo">'+fmt(totalS)+'</td><td class="'+(totalE-totalS>=0?'valor-positivo':'valor-negativo')+'">'+fmt(totalE-totalS)+'</td><td>-</td></tr></tfoot></table></div></div><div class="grid-2"><div class="card"><div class="section-header"><div class="section-title">Por categoria</div></div><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linC+'</tbody></table></div></div><div class="card"><div class="section-header"><div class="section-title">Inadimplencias em aberto</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Meses em aberto</th></tr></thead><tbody>'+linI+'</tbody></table></div></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-verde mb-6">&#128202; Relatorio referente ao ano de '+ano+'</div><div class="card mb-6"><div class="section-header"><div class="section-title">Fluxo de caixa - '+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Mes</th><th>Entradas</th><th>Saidas</th><th>Resultado</th><th>Saldo acumulado</th><th>Mensalidades</th></tr></thead><tbody>'+linR+'</tbody><tfoot><tr style="font-weight:600;background:var(--creme);"><td>TOTAL ANUAL</td><td class="valor-positivo">'+fmt(totalE)+'</td><td class="valor-negativo">'+fmt(totalS)+'</td><td class="'+(totalE-totalS>=0?'valor-positivo':'valor-negativo')+'">'+fmt(totalE-totalS)+'</td><td class="'+(saldoAcum>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoAcum)+'</td><td>-</td></tr></tfoot></table></div></div><div class="grid-2"><div class="card"><div class="section-header"><div class="section-title">Por categoria</div></div><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linC+'</tbody></table></div></div><div class="card"><div class="section-header"><div class="section-title">Inadimplencias em aberto</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Meses em aberto</th></tr></thead><tbody>'+linI+'</tbody></table></div></div></div></div>';
 }
 
 // DADOS DE EXEMPLO
@@ -701,7 +796,7 @@ Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabsValidosParaPeriodo,migrarTrabalhadores,
-  periodoParaNum,periodoStrParaNum,competenciaEntradaNum,
+  totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,darBaixa,confirmarBaixa,estornar,
