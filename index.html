@@ -170,15 +170,15 @@ th .cb-select{accent-color:var(--branco);}
   <nav class="sidebar-nav">
     <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')"><span class="nav-icon">&#127968;</span> Dashboard</div>
     <div class="nav-item" data-page="mensalidades" onclick="navigate('mensalidades')"><span class="nav-icon">&#128101;</span> Mensalidades</div>
-    <div class="nav-item" data-page="lancamentos" onclick="navigate('lancamentos')"><span class="nav-icon">&#128218;</span> Lancamentos</div>
+    <div class="nav-item" data-page="lancamentos" onclick="navigate('lancamentos')"><span class="nav-icon">&#128218;</span> Lançamentos</div>
     <div class="nav-item" data-page="cantina" onclick="navigate('cantina')"><span class="nav-icon">&#127859;</span> Cantina</div>
     <div class="nav-item" data-page="rifas" onclick="navigate('rifas')"><span class="nav-icon">&#127903;</span> Rifas e Eventos</div>
     <div class="nav-item" data-page="trabalhadores" onclick="navigate('trabalhadores')"><span class="nav-icon">&#127807;</span> Trabalhadores</div>
-    <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatorios</div>
+    <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatórios</div>
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.0 - Axe e forca</div>
+    <div style="margin-top:4px;">v1.0 - Axé e força</div>
   </div>
 </div>
 <div class="main">
@@ -272,7 +272,7 @@ function carregarDB(){
 }
 function fmt(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);}
 function fmtData(d){if(!d)return'-';const[y,m,dia]=d.split('-');return dia+'/'+m+'/'+y;}
-function mesNome(m){return['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m-1];}
+function mesNome(m){return['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m-1];}
 function hoje(){return new Date().toISOString().split('T')[0];}
 function getMes(){return new Date().getMonth()+1;}
 function getAno(){return new Date().getFullYear();}
@@ -306,7 +306,7 @@ function atualizarSeletorGlobal(){
 function toggleSidebar(){const s=document.getElementById('sidebar');const o=document.getElementById('overlayBg');s.classList.toggle('open');o.style.display=s.classList.contains('open')?'block':'none';}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlayBg').style.display='none';}
 
-const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lancamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatorios'};
+const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios'};
 function navigate(page){
   paginaAtual=page;
   document.querySelectorAll('.nav-item').forEach(n=>{
@@ -424,8 +424,8 @@ function renderDashboard(){
     '<div class="grid-4 mb-6" style="grid-template-columns:repeat(5,1fr);">'+
       '<div class="metric"><div class="metric-label">Saldo inicial</div><div class="metric-value '+(saldoInicial>=0?'positivo':'negativo')+'">'+fmt(saldoInicial)+'</div><div class="metric-sub">Vindo de '+mesNome(mes===1?12:mes-1)+'/'+(mes===1?ano-1:ano)+'</div></div>'+
       '<div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
-      '<div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
-      '<div class="metric"><div class="metric-label">Resultado do mes</div><div class="metric-value '+(resultado>=0?'positivo':'negativo')+'">'+fmt(resultado)+'</div><div class="metric-sub">'+(resultado>=0?'Superavit':'Deficit')+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Resultado do mes</div><div class="metric-value '+(resultado>=0?'positivo':'negativo')+'">'+fmt(resultado)+'</div><div class="metric-sub">'+(resultado>=0?'Superávit':'Déficit')+'</div></div>'+
       '<div class="metric" style="border:1.5px solid '+(saldoFinal>=0?'var(--verde)':'var(--vermelho)')+'"><div class="metric-label">Saldo final em caixa</div><div class="metric-value '+(saldoFinal>=0?'positivo':'negativo')+'">'+fmt(saldoFinal)+'</div><div class="metric-sub">Acumulado ate '+mesNome(mes)+'/'+ano+'</div></div>'+
     '</div>';
 
@@ -437,20 +437,20 @@ function renderDashboard(){
         '<div style="display:flex;gap:12px;"><div style="flex:1;text-align:center;padding:12px;background:var(--verde-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--verde);">'+pg.length+'</div><div class="text-muted">Pagos</div></div><div style="flex:1;text-align:center;padding:12px;background:var(--vermelho-bg);border-radius:var(--radius-sm);"><div style="font-size:20px;font-weight:600;color:var(--vermelho);">'+pe.length+'</div><div class="text-muted">Pendentes</div></div>'+
         '<div style="flex:1;text-align:center;padding:12px;background:var(--creme2);border-radius:var(--radius-sm);"><div style="font-size:14px;font-weight:600;color:var(--texto2);">'+fmt(recebMens)+' / '+fmt(totalMens)+'</div><div class="text-muted">Recebido</div></div></div>'+
       '</div>'+
-      '<div class="card"><div class="section-title mb-4">Acoes rapidas</div><div class="grid-2" style="gap:10px;">'+
+      '<div class="card"><div class="section-title mb-4">Ações rápidas</div><div class="grid-2" style="gap:10px;">'+
         '<div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div>'+
         '<div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div>'+
         '<div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div>'+
         '<div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div>'+
       '</div></div>'+
     '</div>'+
-    '<div class="card"><div class="section-header"><div class="section-title">Lancamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div>'+
+    '<div class="card"><div class="section-header"><div class="section-title">Lançamentos de '+mesNome(mes)+'/'+ano+'</div><button class="btn btn-sm btn-ghost" onclick="navigate(\'lancamentos\')">Ver todos</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead><tbody>'+ultHTML+'</tbody></table></div></div>'+
     '</div>';
 }
 
 // MENSALIDADES
 function pgMensalidades(){
-  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mes</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mês</button></div>';
   renderMens();
 }
 function renderMens(){
@@ -468,7 +468,7 @@ function renderMens(){
   else{[...pe,...pg].forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" '+(m.status==='pago'?'disabled title="Ja pago"':'')+'></td><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';});}
   let linInat='';
   if(listaInativa.length>0){
-    linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/nao existentes neste periodo foram excluidas dos totais.</div>';
+    linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/não existentes neste período foram exluídas dos totais.</div>';
   }
   document.getElementById('pageContent').innerHTML=
     '<div class="page">'+
@@ -480,12 +480,12 @@ function renderMens(){
     '<div id="bulkBarMens" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
       '<button class="btn btn-primary btn-sm" onclick="baixaMassa()">&#10003; Dar baixa selecionadas</button>'+
-      '<button class="btn btn-ghost btn-sm" onclick="limparSelMens()">&#10005; Limpar selecao</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="limparSelMens()">&#10005; Limpar seleção</button>'+
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
       '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar todos pendentes"></th>'+
-      '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th>'+
+      '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Ação</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
 }
 function atualizarBulkMens(){
@@ -516,11 +516,11 @@ function baixaMassa(){
   const formas=['PIX','Dinheiro','Transferencia','Cartao'];
   openModal(
     'Baixa em massa \u2014 '+pendentes.length+' mensalidade(s)',
-    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9888; Sera aplicado a '+pendentes.length+' mensalidade(s) pendente(s) selecionada(s).</div>'+
+    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9888; Será aplicado a '+pendentes.length+' mensalidade(s) pendente(s) selecionada(s).</div>'+
     '<div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxDataMassa" value="'+hoje()+'"></div>'+
     '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxFormaMassa">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-primary" onclick="confirmarBaixaMassa('+JSON.stringify(pendentes)+')">&#10003; Confirmar baixa em massa</button>'
+    '<button class="btn btn-primary" onclick="confirmarBaixaMassa('+JSON.stringify(pendentes)+')">✓ Confirmar baixa em massa</button>'
   );
 }
 function confirmarBaixaMassa(ids){
@@ -600,9 +600,9 @@ function gerarMes(){
   const mes=filtroMes,ano=filtroAno;
   // apenas trabalhadores que existem no período e estão ativos
   const validos=db.trabalhadores.filter(t=>trabExisteNoPeriodo(t,mes,ano)&&trabAtivoNoPeriodo(t));
-  if(!validos.length){alert('Nenhum trabalhador ativo para '+mesNome(mes)+'/'+ano+'.\nVerifique datas de ingresso e status.');return;}
+  if(!validos.length){alert('Nenhum trabalhador ativo para '+mesNome(mes)+'/'+ano+'.\nVerifique as datas de ingresso e o status.');return;}
   const ja=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
-  if(ja.length>0&&!confirm('Ja existem '+ja.length+' mensalidades para este mes. Gerar apenas as que faltam?'))return;
+  if(ja.length>0&&!confirm('Já existem '+ja.length+' mensalidades para este mês. Gerar apenas as que faltam?'))return;
   let n=0;
   validos.forEach(t=>{
     if(!db.mensalidades.find(m=>m.mes===mes&&m.ano===ano&&m.trabalhadorId===t.id)){
@@ -661,7 +661,7 @@ function renderLanc(){
   const ent=lista.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
   const sai=lista.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
   const lin=lista.length===0?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+l.descricao+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+l.categoria+'</span></td><td>'+(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saidas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function abrirNovoLanc(tipo){
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
@@ -677,15 +677,15 @@ function abrirNovoLanc(tipo){
     // outro mês: usa o primeiro dia do mês do período
     dataDefault=String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
   }
-  openModal('Novo lancamento',
+  openModal('Novo lançamento',
     '<div class="form-row mb-4">'+
       '<div><label class="form-label">Tipo</label><select class="form-control" id="lTipo">'+
         '<option value="receita" '+(tipo==='receita'?'selected':'')+'>Receita (entrada)</option>'+
-        '<option value="despesa" '+(tipo==='despesa'?'selected':'')+'>Despesa (saida)</option>'+
+        '<option value="despesa" '+(tipo==='despesa'?'selected':'')+'>Despesa (saída)</option>'+
       '</select></div>'+
       '<div><label class="form-label">Data</label><input type="date" class="form-control" id="lData" value="'+dataDefault+'"></div>'+
     '</div>'+
-    '<div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="lDesc" placeholder="Ex: Compra de velas..."></div>'+
+    '<div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="lDesc" placeholder="Ex: Compra de velas..."></div>'+
     '<div class="form-row">'+
       '<div><label class="form-label">Categoria</label><select class="form-control" id="lCat">'+cats.map(c=>'<option>'+c+'</option>').join('')+'</select></div>'+
       '<div><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="lValor" placeholder="0,00" min="0" step="0.01"></div>'+
@@ -705,7 +705,7 @@ function salvarLanc(editId){
   if(editId){
     // MODO EDICAO: atualiza o registro existente pelo id, sem criar novo
     const idx=db.lancamentos.findIndex(l=>l.id===editId);
-    if(idx<0){alert('Lancamento nao encontrado.');return;}
+    if(idx<0){alert('Lançamento não encontrado.');return;}
     // preserva campos extras e atualiza apenas os editaveis
     db.lancamentos[idx]={...db.lancamentos[idx],data,tipo,categoria:cat,descricao:desc,valor,formaPagamento:forma};
   } else {
@@ -726,25 +726,25 @@ function editarLanc(id){
   const catsOpts=[...new Set([...cats,l.categoria])];
   const formasOpts=[...new Set([...formas,l.formaPagamento||'Dinheiro'])];
   openModal(
-    'Editar lancamento',
-    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — o lancamento sera atualizado, nao duplicado.</div>'+
+    'Editar lançamento',
+    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — o lançamento será atualizado, não duplicado.</div>'+
     '<div class="form-row mb-4">'+
       '<div><label class="form-label">Tipo</label><select class="form-control" id="lTipo">'+
         '<option value="receita" '+(l.tipo==='receita'?'selected':'')+'>Receita (entrada)</option>'+
-        '<option value="despesa" '+(l.tipo==='despesa'?'selected':'')+'>Despesa (saida)</option>'+
+        '<option value="despesa" '+(l.tipo==='despesa'?'selected':'')+'>Despesa (saída)</option>'+
       '</select></div>'+
       '<div><label class="form-label">Data</label><input type="date" class="form-control" id="lData" value="'+(l.data||'')+'"></div>'+
     '</div>'+
-    '<div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="lDesc" value="'+(l.descricao||'')+'" placeholder="Ex: Compra de velas..."></div>'+
+    '<div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="lDesc" value="'+(l.descricao||'')+'" placeholder="Ex: Compra de velas..."></div>'+
     '<div class="form-row">'+
       '<div><label class="form-label">Categoria</label><select class="form-control" id="lCat">'+catsOpts.map(c=>'<option '+(c===l.categoria?'selected':'')+'>'+c+'</option>').join('')+'</select></div>'+
       '<div><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="lValor" value="'+(l.valor||'')+'" min="0" step="0.01"></div>'+
     '</div>'+
     '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="lForma">'+formasOpts.map(f=>'<option '+(f===(l.formaPagamento||'Dinheiro')?'selected':'')+'>'+f+'</option>').join('')+'</select></div>',
-    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc(\'' + id + '\')">&#10003; Salvar alteracoes</button>'
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function excluirLanc(id){confirmar('Excluir este lancamento?',()=>{
+function excluirLanc(id){confirmar('Excluir este lançamento?',()=>{
   db.lancamentos=db.lancamentos.filter(l=>l.id!==id);
   // limpa referências órfãs em mensalidades, cantina e rifas
   db.mensalidades.forEach(m=>{if(m.lancamentoId===id){m.lancamentoId=null;}});
@@ -763,7 +763,7 @@ function renderTrabs(){
   const todos=[...db.trabalhadores].sort((a,b)=>a.nome.localeCompare(b.nome));
   const validosNoPeriodo=trabsValidosParaPeriodo(mes,ano);
   const lin=todos.length===0
-    ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#127807;</div><p>Nenhum trabalhador cadastrado</p><p class="text-muted">Clique em &quot;+ Trabalhador&quot; para comecar</p></div></td></tr>'
+    ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#127807;</div><p>Nenhum trabalhador cadastrado</p><p class="text-muted">Clique em &quot;+ Trabalhador&quot; para começar</p></div></td></tr>'
     :todos.map(t=>{
       const existeNoPeriodo=trabExisteNoPeriodo(t,mes,ano);
       const validoNoPeriodo=existeNoPeriodo&&trabAtivoNoPeriodo(t);
@@ -775,21 +775,21 @@ function renderTrabs(){
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page">'+
-    '<div class="alert alert-azul mb-6" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);">&#128197; Exibindo periodo: <strong>'+mesNome(mes)+'/'+ano+'</strong> \u2014 '+validosNoPeriodo.length+' trabalhador(es) ativo(s) neste periodo</div>'+
+    '<div class="alert alert-azul mb-6" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);">&#128197; Exibindo periodo: <strong>'+mesNome(mes)+'/'+ano+'</strong> \u2014 '+validosNoPeriodo.length+' trabalhador(es) ativo(s) neste período</div>'+
     '<div class="grid-3 mb-6">'+
       '<div class="metric"><div class="metric-label">Total cadastrado</div><div class="metric-value neutro">'+todos.length+'</div></div>'+
-      '<div class="metric"><div class="metric-label">Validos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div>'+
-      '<div class="metric"><div class="metric-label">Mensalidade media</div><div class="metric-value neutro">'+fmt(validosNoPeriodo.length?validosNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/validosNoPeriodo.length:0)+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Válidos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Mensalidade média</div><div class="metric-value neutro">'+fmt(validosNoPeriodo.length?validosNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/validosNoPeriodo.length:0)+'</div></div>'+
     '</div>'+
     '<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountTrabs">0 selecionados</span>'+
       '<button class="btn btn-primary btn-sm" onclick="editMassaTrabs()">&#9999;&#65039; Editar selecionados</button>'+
-      '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">&#10005; Limpar selecao</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">&#10005; Limpar seleção</button>'+
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
       '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos"></th>'+
-      '<th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no periodo</th><th>Acoes</th>'+
+      '<th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no período</th><th>Ações</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function atualizarBulkTrabs(){
@@ -817,21 +817,21 @@ function editMassaTrabs(){
   if(!ids.length)return;
   openModal(
     'Editar em massa \u2014 '+ids.length+' trabalhador(es)',
-    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9998; Preencha apenas os campos que deseja alterar. Campos em branco nao serao modificados.</div>'+
+    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9998; Preencha apenas os campos que deseja alterar. Campos em branco não serão modificados.</div>'+
     '<div class="form-group">'+
-      '<label class="form-label">Novo valor de mensalidade (R$) <span class="text-muted">(deixe vazio para nao alterar)</span></label>'+
+      '<label class="form-label">Novo valor de mensalidade (R$) <span class="text-muted">(deixe vazio para não alterar)</span></label>'+
       '<input type="number" class="form-control" id="massaValor" min="0" step="0.01" placeholder="Ex: 60,00">'+
     '</div>'+
     '<div class="form-group">'+
-      '<label class="form-label">Novo status <span class="text-muted">(deixe como Nao alterar para nao modificar)</span></label>'+
+      '<label class="form-label">Novo status <span class="text-muted">(deixe como Não alterar para não modificar)</span></label>'+
       '<select class="form-control" id="massaStatus">'+
-        '<option value="">Nao alterar</option>'+
+        '<option value="">Não alterar</option>'+
         '<option value="true">Ativo</option>'+
         '<option value="false">Inativo</option>'+
       '</select>'+
     '</div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-primary" onclick="confirmarEditMassa('+JSON.stringify([])+')">&#10003; Aplicar alteracoes</button>'
+    '<button class="btn btn-primary" onclick="confirmarEditMassa('+JSON.stringify([])+')">&#10003; Aplicar alterações</button>'
   );
   // patch: reescreve o botao com os ids corretos apos o modal abrir
   setTimeout(()=>{
@@ -846,8 +846,8 @@ function confirmarEditMassa(ids){
   const novoValorStr=document.getElementById('massaValor').value.trim();
   const novoStatus=document.getElementById('massaStatus').value;
   const novoValor=novoValorStr!==''?parseFloat(novoValorStr):null;
-  if(novoValor===null&&novoStatus===''){alert('Nenhuma alteracao definida. Preencha pelo menos um campo.');return;}
-  if(novoValor!==null&&(isNaN(novoValor)||novoValor<0)){alert('Valor de mensalidade invalido.');return;}
+  if(novoValor===null&&novoStatus===''){alert('Nenhuma alteração definida. Preencha pelo menos um campo.');return;}
+  if(novoValor!==null&&(isNaN(novoValor)||novoValor<0)){alert('Valor de mensalidade inválido.');return;}
   let alterados=0;
   ids.forEach(id=>{
     const t=db.trabalhadores.find(x=>x.id===id);
@@ -875,7 +875,7 @@ function confirmarEditMassa(ids){
 
 function formTrab(t){
   const compInfo=t.competenciaEntrada&&t.competenciaEntrada!=='legado'
-    ?'<div class="form-group"><label class="form-label">Competencia de entrada</label><input type="text" class="form-control" value="'+t.competenciaEntrada+'" readonly style="background:var(--creme);color:var(--texto3);cursor:default;" title="Periodo em que o trabalhador foi cadastrado. Nao pode ser alterado."></div>'
+    ?'<div class="form-group"><label class="form-label">Competência de entrada</label><input type="text" class="form-control" value="'+t.competenciaEntrada+'" readonly style="background:var(--creme);color:var(--texto3);cursor:default;" title="Período em que o trabalhador foi cadastrado. Não pode ser alterado."></div>'
     :'';
   return '<div class="form-row"><div class="form-group"><label class="form-label">Nome completo *</label><input type="text" class="form-control" id="tNome" value="'+(t.nome||'')+'" placeholder="Nome do trabalhador"></div><div class="form-group"><label class="form-label">Apelido / nome de santo</label><input type="text" class="form-control" id="tApelido" value="'+(t.apelido||'')+'" placeholder="Ex: Filho de Ogum"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Telefone</label><input type="tel" class="form-control" id="tTel" value="'+(t.telefone||'')+'" placeholder="(11) 99999-9999"></div><div class="form-group"><label class="form-label">Mensalidade (R$)</label><input type="number" class="form-control" id="tValor" value="'+(t.valorMensalidade||50)+'" min="0" step="0.01"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Data de ingresso</label><input type="date" class="form-control" id="tData" value="'+(t.dataIngresso||hoje())+'"></div><div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="tAtivo" '+(t.ativo!==false?'checked':'')+' style="width:18px;height:18px;accent-color:var(--verde);"><span class="form-label" style="margin:0;">Trabalhador ativo</span></label></div></div>'+compInfo;
 }
@@ -899,7 +899,7 @@ function salvarTrab(id){
 
   if(id){
     trabalhador=db.trabalhadores.find(x=>x.id===id);
-    if(!trabalhador){alert('Trabalhador nao encontrado.');return;}
+    if(!trabalhador){alert('Trabalhador não encontrado.');return;}
     const valorAntigo=trabalhador.valorMensalidade;
     Object.assign(trabalhador,dados);
     // se o valor da mensalidade mudou, atualiza todas as mensalidades PENDENTES deste trabalhador
@@ -949,12 +949,12 @@ function renderCantina(){
   const rec=lista.filter(c=>c.tipo==='entrada').reduce((a,c)=>a+c.valor,0);
   const cus=lista.filter(c=>c.tipo==='custo').reduce((a,c)=>a+c.valor,0);
   const lin=lista.length===0?'<tr><td colspan="5"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+c.descricao+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function novaCantina(){
   const agora=new Date();
   const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
-  openModal('Movimento na Cantina','<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+dataDefault+'"></div></div><div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>');
+  openModal('Movimento na Cantina','<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+dataDefault+'"></div></div><div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>');
 }
 function salvarCantina(editId){
   const tipo=document.getElementById('cTipo').value;
@@ -965,7 +965,7 @@ function salvarCantina(editId){
   if(editId){
     // MODO EDICAO: atualiza cantina e o lancamento vinculado
     const idx=db.cantina.findIndex(c=>c.id===editId);
-    if(idx<0){alert('Movimento nao encontrado.');return;}
+    if(idx<0){alert('Movimento não encontrado.');return;}
     const item=db.cantina[idx];
     // atualiza o lancamento vinculado se existir
     if(item.lancamentoId){
@@ -985,14 +985,14 @@ function editarCantina(id){
   const c=db.cantina.find(x=>x.id===id);if(!c)return;
   openModal(
     'Editar movimento',
-    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — sera atualizado, nao duplicado.</div>'+
+    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — será atualizado, não duplicado.</div>'+
     '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo">'+
       '<option value="entrada" '+(c.tipo==='entrada'?'selected':'')+'>Entrada (venda)</option>'+
       '<option value="custo" '+(c.tipo==='custo'?'selected':'')+'>Custo (compra)</option>'+
     '</select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+(c.data||'')+'"></div></div>'+
-    '<div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="cDesc" value="'+(c.descricao||'')+'" placeholder="Ex: Venda de salgados..."></div>'+
+    '<div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="cDesc" value="'+(c.descricao||'')+'" placeholder="Ex: Venda de salgados..."></div>'+
     '<div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" value="'+(c.valor||'')+'" min="0" step="0.01"></div>',
-    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina(\'' + id + '\')">&#10003; Salvar alteracoes</button>'
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
 function delCantina(id){confirmar('Excluir este movimento?',()=>{
@@ -1032,7 +1032,7 @@ function salvarRifa(editId){
   if(editId){
     // MODO EDICAO: atualiza rifa e lançamentos vinculados
     const idx=db.rifas.findIndex(r=>r.id===editId);
-    if(idx<0){alert('Rifa/evento nao encontrado.');return;}
+    if(idx<0){alert('Rifa/evento não encontrado.');return;}
     const rifa=db.rifas[idx];
     // atualiza lancamento de arrecadacao
     if(rifa.lancamentoArrId){
@@ -1070,13 +1070,13 @@ function editarRifa(id){
   const tipos=['Rifa','Evento','Bingo','Gincana','Outro'];
   openModal(
     'Editar rifa / evento',
-    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — sera atualizado, nao duplicado.</div>'+
+    '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — será atualizado, não duplicado.</div>'+
     '<div class="form-group"><label class="form-label">Nome</label><input type="text" class="form-control" id="rNome" value="'+(r.nome||'')+'" placeholder="Ex: Rifa junina..."></div>'+
     '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="rTipo">'+tipos.map(t=>'<option '+(t===r.tipo?'selected':'')+'>'+t+'</option>').join('')+'</select></div>'+
     '<div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="rData" value="'+(r.data||'')+'"></div></div>'+
     '<div class="form-row"><div class="form-group"><label class="form-label">Total arrecadado (R$)</label><input type="number" class="form-control" id="rArr" value="'+(r.arrecadado||0)+'" min="0" step="0.01"></div>'+
     '<div class="form-group"><label class="form-label">Custo total (R$)</label><input type="number" class="form-control" id="rCus" value="'+(r.custo||0)+'" min="0" step="0.01"></div></div>',
-    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa(\'' + id + '\')">&#10003; Salvar alteracoes</button>'
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
 function delRifa(id){confirmar('Excluir esta rifa/evento?',()=>{
@@ -1112,7 +1112,7 @@ function pgRelatorios(){
   const linR=resumos.map(r=>'<tr><td><strong>'+mesNome(r.m)+'</strong></td><td class="valor-positivo">'+fmt(r.e)+'</td><td class="valor-negativo">'+fmt(r.s)+'</td><td class="'+(r.res>=0?'valor-positivo':'valor-negativo')+'">'+fmt(r.res)+'</td><td class="'+(r.saldoFinal>=0?'valor-positivo':'valor-negativo')+'"><strong>'+fmt(r.saldoFinal)+'</strong></td><td>'+r.pg+'/'+r.tot+'</td></tr>').join('');
   const linC=Object.entries(porCat).map(([c,v])=>'<tr><td>'+c+'</td><td class="valor-positivo">'+fmt(v.receita)+'</td><td class="valor-negativo">'+fmt(v.despesa)+'</td><td class="'+(v.receita-v.despesa>=0?'valor-positivo':'valor-negativo')+'">'+fmt(v.receita-v.despesa)+'</td></tr>').join('')||'<tr><td colspan="4"><span class="text-muted">Sem dados</span></td></tr>';
   const linI=Object.keys(ina).length===0?'<tr><td colspan="2"><span class="text-muted">Nenhuma inadimplencia</span></td></tr>':Object.entries(ina).map(([n,ms])=>'<tr><td><strong>'+n+'</strong></td><td>'+ms.join(', ')+'</td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-verde mb-6">&#128202; Relatorio referente ao ano de '+ano+'</div><div class="card mb-6"><div class="section-header"><div class="section-title">Fluxo de caixa - '+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Mes</th><th>Entradas</th><th>Saidas</th><th>Resultado</th><th>Saldo acumulado</th><th>Mensalidades</th></tr></thead><tbody>'+linR+'</tbody><tfoot><tr style="font-weight:600;background:var(--creme);"><td>TOTAL ANUAL</td><td class="valor-positivo">'+fmt(totalE)+'</td><td class="valor-negativo">'+fmt(totalS)+'</td><td class="'+(totalE-totalS>=0?'valor-positivo':'valor-negativo')+'">'+fmt(totalE-totalS)+'</td><td class="'+(saldoAcum>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoAcum)+'</td><td>-</td></tr></tfoot></table></div></div><div class="grid-2"><div class="card"><div class="section-header"><div class="section-title">Por categoria</div></div><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linC+'</tbody></table></div></div><div class="card"><div class="section-header"><div class="section-title">Inadimplencias em aberto</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Meses em aberto</th></tr></thead><tbody>'+linI+'</tbody></table></div></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-verde mb-6">&#128202; Relatório referente ao ano de '+ano+'</div><div class="card mb-6"><div class="section-header"><div class="section-title">Fluxo de caixa - '+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th><th>Saldo acumulado</th><th>Mensalidades</th></tr></thead><tbody>'+linR+'</tbody><tfoot><tr style="font-weight:600;background:var(--creme);"><td>TOTAL ANUAL</td><td class="valor-positivo">'+fmt(totalE)+'</td><td class="valor-negativo">'+fmt(totalS)+'</td><td class="'+(totalE-totalS>=0?'valor-positivo':'valor-negativo')+'">'+fmt(totalE-totalS)+'</td><td class="'+(saldoAcum>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoAcum)+'</td><td>-</td></tr></tfoot></table></div></div><div class="grid-2"><div class="card"><div class="section-header"><div class="section-title">Por categoria</div></div><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linC+'</tbody></table></div></div><div class="card"><div class="section-header"><div class="section-title">Inadimplências em aberto</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Meses em aberto</th></tr></thead><tbody>'+linI+'</tbody></table></div></div></div></div>';
 }
 
 // DADOS DE EXEMPLO
