@@ -552,7 +552,33 @@ function renderLanc(){
 function abrirNovoLanc(tipo){
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
   const formas=['Dinheiro','PIX','Transferencia','Cartao','Cheque'];
-  openModal('Novo lancamento','<div class="form-row mb-4"><div><label class="form-label">Tipo</label><select class="form-control" id="lTipo"><option value="receita" '+(tipo==='receita'?'selected':'')+'>Receita (entrada)</option><option value="despesa" '+(tipo==='despesa'?'selected':'')+'>Despesa (saida)</option></select></div><div><label class="form-label">Data</label><input type="date" class="form-control" id="lData" value="'+hoje()+'"></div></div><div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="lDesc" placeholder="Ex: Compra de velas..."></div><div class="form-row"><div><label class="form-label">Categoria</label><select class="form-control" id="lCat">'+cats.map(c=>'<option>'+c+'</option>').join('')+'</select></div><div><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="lValor" placeholder="0,00" min="0" step="0.01"></div></div><div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="lForma">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc()">Salvar</button>');
+  // data padrão: último dia do mês do período global ativo (ou hoje se for o mês atual)
+  const agora=new Date();
+  const mesAtual=agora.getMonth()+1;
+  const anoAtual=agora.getFullYear();
+  let dataDefault;
+  if(filtroMes===mesAtual&&filtroAno===anoAtual){
+    dataDefault=hoje(); // mês atual: usa hoje
+  } else {
+    // outro mês: usa o primeiro dia do mês do período
+    dataDefault=String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
+  }
+  openModal('Novo lancamento',
+    '<div class="form-row mb-4">'+
+      '<div><label class="form-label">Tipo</label><select class="form-control" id="lTipo">'+
+        '<option value="receita" '+(tipo==='receita'?'selected':'')+'>Receita (entrada)</option>'+
+        '<option value="despesa" '+(tipo==='despesa'?'selected':'')+'>Despesa (saida)</option>'+
+      '</select></div>'+
+      '<div><label class="form-label">Data</label><input type="date" class="form-control" id="lData" value="'+dataDefault+'"></div>'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="lDesc" placeholder="Ex: Compra de velas..."></div>'+
+    '<div class="form-row">'+
+      '<div><label class="form-label">Categoria</label><select class="form-control" id="lCat">'+cats.map(c=>'<option>'+c+'</option>').join('')+'</select></div>'+
+      '<div><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="lValor" placeholder="0,00" min="0" step="0.01"></div>'+
+    '</div>'+
+    '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="lForma">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc()">Salvar</button>'
+  );
 }
 function salvarLanc(){
   const tipo=document.getElementById('lTipo').value;
@@ -563,9 +589,12 @@ function salvarLanc(){
   const forma=document.getElementById('lForma').value;
   if(!data||!desc||!valor||valor<=0){alert('Preencha todos os campos corretamente.');return;}
   db.lancamentos.push({id:uid(),data,tipo,categoria:cat,descricao:desc,valor,formaPagamento:forma,status:'confirmado'});
-  salvarDB();closeModal();
-  if(paginaAtual==='lancamentos')renderLanc();
-  else pgDashboard(); // atualiza dashboard independentemente de onde foi chamado
+  salvarDB();
+  closeModal();
+  // sempre re-renderiza a aba atual
+  const pages={dashboard:pgDashboard,lancamentos:pgLancamentos,mensalidades:pgMensalidades,cantina:pgCantina,rifas:pgRifas};
+  if(pages[paginaAtual])pages[paginaAtual]();
+  else pgDashboard();
 }
 function excluirLanc(id){confirmar('Excluir este lancamento?',()=>{
   db.lancamentos=db.lancamentos.filter(l=>l.id!==id);
@@ -677,7 +706,11 @@ function renderCantina(){
   const lin=lista.length===0?'<tr><td colspan="5"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+c.descricao+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><button class="btn btn-sm btn-ghost" onclick="delCantina(\''+c.id+'\')">&#128465;</button></td></tr>').join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descricao</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
-function novaCantina(){openModal('Movimento na Cantina','<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+hoje()+'"></div></div><div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>');}
+function novaCantina(){
+  const agora=new Date();
+  const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
+  openModal('Movimento na Cantina','<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+dataDefault+'"></div></div><div class="form-group"><label class="form-label">Descricao</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>');
+}
 function salvarCantina(){
   const tipo=document.getElementById('cTipo').value;
   const data=document.getElementById('cData').value;
@@ -711,7 +744,11 @@ function renderRifas(){
   let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{const res=r.arrecadado-r.custo;return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+r.nome+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+r.tipo+'</span></div></div><button class="btn btn-sm btn-ghost" onclick="delRifa(\''+r.id+'\')">&#128465;</button></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';}).join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total arrecadado</div><div class="metric-value positivo">'+fmt(totArr)+'</div><div class="metric-sub">'+lista.length+' evento(s) em '+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Total de custos</div><div class="metric-value negativo">'+fmt(totCus)+'</div></div><div class="metric"><div class="metric-label">Resultado geral</div><div class="metric-value '+(totRes>=0?'positivo':'negativo')+'">'+fmt(totRes)+'</div></div></div>'+cards+'</div>';
 }
-function novaRifa(){openModal('Nova rifa / evento','<div class="form-group"><label class="form-label">Nome</label><input type="text" class="form-control" id="rNome" placeholder="Ex: Rifa junina..."></div><div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="rTipo"><option>Rifa</option><option>Evento</option><option>Bingo</option><option>Gincana</option><option>Outro</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="rData" value="'+hoje()+'"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Total arrecadado (R$)</label><input type="number" class="form-control" id="rArr" min="0" step="0.01" placeholder="0,00"></div><div class="form-group"><label class="form-label">Custo total (R$)</label><input type="number" class="form-control" id="rCus" min="0" step="0.01" placeholder="0,00"></div></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa()">Salvar</button>');}
+function novaRifa(){
+  const agora=new Date();
+  const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
+  openModal('Nova rifa / evento','<div class="form-group"><label class="form-label">Nome</label><input type="text" class="form-control" id="rNome" placeholder="Ex: Rifa junina..."></div><div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="rTipo"><option>Rifa</option><option>Evento</option><option>Bingo</option><option>Gincana</option><option>Outro</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="rData" value="'+dataDefault+'"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Total arrecadado (R$)</label><input type="number" class="form-control" id="rArr" min="0" step="0.01" placeholder="0,00"></div><div class="form-group"><label class="form-label">Custo total (R$)</label><input type="number" class="form-control" id="rCus" min="0" step="0.01" placeholder="0,00"></div></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa()">Salvar</button>');
+}
 function salvarRifa(){
   const nome=document.getElementById('rNome').value.trim();
   const tipo=document.getElementById('rTipo').value;
