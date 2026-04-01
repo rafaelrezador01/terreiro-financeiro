@@ -508,11 +508,13 @@ function limparSelMens(){
   if(cbH)cbH.checked=false;
   atualizarBulkMens();
 }
+let _idsBaixaMassa=[];
 function baixaMassa(){
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});
   if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
+  _idsBaixaMassa=pendentes;
   const formas=['PIX','Dinheiro','Transferencia','Cartao'];
   openModal(
     'Baixa em massa \u2014 '+pendentes.length+' mensalidade(s)',
@@ -520,13 +522,16 @@ function baixaMassa(){
     '<div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxDataMassa" value="'+hoje()+'"></div>'+
     '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxFormaMassa">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-primary" onclick="confirmarBaixaMassa('+JSON.stringify(pendentes)+')">✓ Confirmar baixa em massa</button>'
+    '<button class="btn btn-primary" onclick="confirmarBaixaMassa()">✓ Confirmar baixa em massa</button>'
   );
 }
-function confirmarBaixaMassa(ids){
+function confirmarBaixaMassa(){
+  const ids=_idsBaixaMassa;
+  if(!ids||!ids.length){alert('Nenhuma mensalidade selecionada.');return;}
   const data=document.getElementById('bxDataMassa').value;
   const forma=document.getElementById('bxFormaMassa').value;
   if(!data){alert('Informe a data.');return;}
+  if(!forma){alert('Informe a forma de pagamento.');return;}
   ids.forEach(id=>{
     const m=db.mensalidades.find(x=>x.id===id);
     if(!m||m.status==='pago')return;
