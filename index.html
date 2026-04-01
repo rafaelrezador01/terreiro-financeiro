@@ -95,6 +95,12 @@ tr:last-child td{border-bottom:none;}
 .justify-between{justify-content:space-between;}
 .gap-2{gap:8px;}
 .empty{text-align:center;padding:48px 24px;color:var(--texto3);}
+.bulk-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--azul-bg);border:1px solid rgba(27,79,114,0.25);border-radius:var(--radius-sm);margin-bottom:16px;flex-wrap:wrap;}
+.bulk-bar-count{font-size:14px;font-weight:500;color:var(--azul);flex:1;}
+.bulk-bar .btn{font-size:13px;}
+.cb-select{width:16px;height:16px;accent-color:var(--verde);cursor:pointer;}
+th .cb-select{accent-color:var(--branco);}
+
 .empty-icon{font-size:40px;margin-bottom:12px;}
 .quick-action{background:var(--branco);border:1.5px dashed var(--borda);border-radius:var(--radius);padding:20px;text-align:center;cursor:pointer;transition:all .2s;color:var(--texto2);}
 .quick-action:hover{border-color:var(--verde);color:var(--verde);background:var(--verde-bg);}
@@ -449,25 +455,91 @@ function pgMensalidades(){
 }
 function renderMens(){
   const mes=filtroMes,ano=filtroAno;
-  // filtra mensalidades do período, excluindo as de trabalhadores inválidos (inativos ou não existentes)
   const validos=trabsValidosParaPeriodo(mes,ano);
   const idsValidos=new Set(validos.map(t=>t.id));
   const lista=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
-  // mensalidades de inativos/não existentes ficam visíveis mas separadas
   const listaInativa=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&!idsValidos.has(m.trabalhadorId));
   const pg=lista.filter(m=>m.status==='pago');
   const pe=lista.filter(m=>m.status==='pendente');
   const totalV=lista.reduce((a,m)=>a+m.valor,0);
   const recV=pg.reduce((a,m)=>a+m.valor,0);
   let lin='';
-  if(lista.length===0){lin='<tr><td colspan="5"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em "Gerar mes" para criar automaticamente</p></div></td></tr>';}
-  else{[...pe,...pg].forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};lin+='<tr><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';});}
-  // linha extra para inativos (informativo)
+  if(lista.length===0){lin='<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em &quot;Gerar mes&quot; para criar automaticamente</p></div></td></tr>';}
+  else{[...pe,...pg].forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" '+(m.status==='pago'?'disabled title="Ja pago"':'')+'></td><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';});}
   let linInat='';
   if(listaInativa.length>0){
     linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/nao existentes neste periodo foram excluidas dos totais.</div>';
   }
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhador(es) valido(s)</div></div><div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div><div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div></div><div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th></tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page">'+
+    '<div class="grid-3 mb-6">'+
+      '<div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhador(es) valido(s)</div></div>'+
+      '<div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div>'+
+      '<div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div>'+
+    '</div>'+
+    '<div id="bulkBarMens" style="display:none;" class="bulk-bar">'+
+      '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
+      '<button class="btn btn-primary btn-sm" onclick="baixaMassa()">&#10003; Dar baixa selecionadas</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="limparSelMens()">&#10005; Limpar selecao</button>'+
+    '</div>'+
+    '<div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar todos pendentes"></th>'+
+      '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Acao</th>'+
+    '</tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
+}
+function atualizarBulkMens(){
+  const cbs=[...document.querySelectorAll('.cb-mens:checked')];
+  const bar=document.getElementById('bulkBarMens');
+  const cnt=document.getElementById('bulkCountMens');
+  if(cbs.length>0){bar.style.display='flex';cnt.textContent=cbs.length+' mensalidade(s) selecionada(s)';}
+  else{bar.style.display='none';}
+  const todos=[...document.querySelectorAll('.cb-mens:not(:disabled)')];
+  const cbH=document.getElementById('cbTodosMens');
+  if(cbH)cbH.checked=todos.length>0&&todos.every(c=>c.checked);
+}
+function toggleTodosMens(cbH){
+  document.querySelectorAll('.cb-mens:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
+  atualizarBulkMens();
+}
+function limparSelMens(){
+  document.querySelectorAll('.cb-mens').forEach(c=>{c.checked=false;});
+  const cbH=document.getElementById('cbTodosMens');
+  if(cbH)cbH.checked=false;
+  atualizarBulkMens();
+}
+function baixaMassa(){
+  const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
+  if(!ids.length)return;
+  const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});
+  if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
+  const formas=['PIX','Dinheiro','Transferencia','Cartao'];
+  openModal(
+    'Baixa em massa \u2014 '+pendentes.length+' mensalidade(s)',
+    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9888; Sera aplicado a '+pendentes.length+' mensalidade(s) pendente(s) selecionada(s).</div>'+
+    '<div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxDataMassa" value="'+hoje()+'"></div>'+
+    '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxFormaMassa">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-primary" onclick="confirmarBaixaMassa('+JSON.stringify(pendentes)+')">&#10003; Confirmar baixa em massa</button>'
+  );
+}
+function confirmarBaixaMassa(ids){
+  const data=document.getElementById('bxDataMassa').value;
+  const forma=document.getElementById('bxFormaMassa').value;
+  if(!data){alert('Informe a data.');return;}
+  ids.forEach(id=>{
+    const m=db.mensalidades.find(x=>x.id===id);
+    if(!m||m.status==='pago')return;
+    const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
+    m.status='pago';
+    m.dataPagamento=data;
+    const lancId=uid();
+    db.lancamentos.push({id:lancId,data,tipo:'receita',categoria:'Mensalidade',descricao:'Mensalidade '+t.nome+' \u2014 '+mesNome(m.mes)+'/'+m.ano,valor:m.valor,formaPagamento:forma,status:'confirmado'});
+    m.lancamentoId=lancId;
+  });
+  salvarDB();
+  closeModal();
+  renderMens();
 }
 // converte mês+ano para número comparável: 2026*100+12 = 202612
 function periodoParaNum(mes,ano){return ano*100+mes;}
@@ -688,11 +760,10 @@ function pgTrabalhadores(){
 }
 function renderTrabs(){
   const mes=filtroMes,ano=filtroAno;
-  // lista completa para gestão (aba trabalhadores mostra todos, mas indica o período)
   const todos=[...db.trabalhadores].sort((a,b)=>a.nome.localeCompare(b.nome));
   const validosNoPeriodo=trabsValidosParaPeriodo(mes,ano);
   const lin=todos.length===0
-    ?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#127807;</div><p>Nenhum trabalhador cadastrado</p><p class="text-muted">Clique em "+ Trabalhador" para comecar</p></div></td></tr>'
+    ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#127807;</div><p>Nenhum trabalhador cadastrado</p><p class="text-muted">Clique em &quot;+ Trabalhador&quot; para comecar</p></div></td></tr>'
     :todos.map(t=>{
       const existeNoPeriodo=trabExisteNoPeriodo(t,mes,ano);
       const validoNoPeriodo=existeNoPeriodo&&trabAtivoNoPeriodo(t);
@@ -700,10 +771,108 @@ function renderTrabs(){
         ?'<span class="badge badge-cinza">Nao existia</span>'
         :(t.ativo?'<span class="badge badge-verde">Ativo</span>':'<span class="badge badge-cinza">Inativo</span>');
       const rowStyle=!existeNoPeriodo?'opacity:0.45;':'';
-      return '<tr style="'+rowStyle+'"><td><strong>'+t.nome+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td><button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button></td></tr>';
+      return '<tr style="'+rowStyle+'"><td><input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()"></td><td><strong>'+t.nome+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td><button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button></td></tr>';
     }).join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-azul mb-6" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);">&#128197; Exibindo periodo: <strong>'+mesNome(mes)+'/'+ano+'</strong> — '+validosNoPeriodo.length+' trabalhador(es) ativo(s) neste periodo</div><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total cadastrado</div><div class="metric-value neutro">'+todos.length+'</div></div><div class="metric"><div class="metric-label">Validos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div><div class="metric"><div class="metric-label">Mensalidade media</div><div class="metric-value neutro">'+fmt(validosNoPeriodo.length?validosNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/validosNoPeriodo.length:0)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div><div class="table-wrap"><table><thead><tr><th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no periodo</th><th>Acoes</th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page">'+
+    '<div class="alert alert-azul mb-6" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);">&#128197; Exibindo periodo: <strong>'+mesNome(mes)+'/'+ano+'</strong> \u2014 '+validosNoPeriodo.length+' trabalhador(es) ativo(s) neste periodo</div>'+
+    '<div class="grid-3 mb-6">'+
+      '<div class="metric"><div class="metric-label">Total cadastrado</div><div class="metric-value neutro">'+todos.length+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Validos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div>'+
+      '<div class="metric"><div class="metric-label">Mensalidade media</div><div class="metric-value neutro">'+fmt(validosNoPeriodo.length?validosNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/validosNoPeriodo.length:0)+'</div></div>'+
+    '</div>'+
+    '<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
+      '<span class="bulk-bar-count" id="bulkCountTrabs">0 selecionados</span>'+
+      '<button class="btn btn-primary btn-sm" onclick="editMassaTrabs()">&#9999;&#65039; Editar selecionados</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">&#10005; Limpar selecao</button>'+
+    '</div>'+
+    '<div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div>'+
+    '<div class="table-wrap"><table><thead><tr>'+
+      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos"></th>'+
+      '<th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no periodo</th><th>Acoes</th>'+
+    '</tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
+function atualizarBulkTrabs(){
+  const cbs=[...document.querySelectorAll('.cb-trab:checked')];
+  const bar=document.getElementById('bulkBarTrabs');
+  const cnt=document.getElementById('bulkCountTrabs');
+  if(cbs.length>0){bar.style.display='flex';cnt.textContent=cbs.length+' trabalhador(es) selecionado(s)';}
+  else{bar.style.display='none';}
+  const todos=[...document.querySelectorAll('.cb-trab')];
+  const cbH=document.getElementById('cbTodosTrabs');
+  if(cbH)cbH.checked=todos.length>0&&todos.every(c=>c.checked);
+}
+function toggleTodosTrabs(cbH){
+  document.querySelectorAll('.cb-trab').forEach(c=>{c.checked=cbH.checked;});
+  atualizarBulkTrabs();
+}
+function limparSelTrabs(){
+  document.querySelectorAll('.cb-trab').forEach(c=>{c.checked=false;});
+  const cbH=document.getElementById('cbTodosTrabs');
+  if(cbH)cbH.checked=false;
+  atualizarBulkTrabs();
+}
+function editMassaTrabs(){
+  const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
+  if(!ids.length)return;
+  openModal(
+    'Editar em massa \u2014 '+ids.length+' trabalhador(es)',
+    '<div class="alert alert-amarelo" style="margin-bottom:16px;">&#9998; Preencha apenas os campos que deseja alterar. Campos em branco nao serao modificados.</div>'+
+    '<div class="form-group">'+
+      '<label class="form-label">Novo valor de mensalidade (R$) <span class="text-muted">(deixe vazio para nao alterar)</span></label>'+
+      '<input type="number" class="form-control" id="massaValor" min="0" step="0.01" placeholder="Ex: 60,00">'+
+    '</div>'+
+    '<div class="form-group">'+
+      '<label class="form-label">Novo status <span class="text-muted">(deixe como Nao alterar para nao modificar)</span></label>'+
+      '<select class="form-control" id="massaStatus">'+
+        '<option value="">Nao alterar</option>'+
+        '<option value="true">Ativo</option>'+
+        '<option value="false">Inativo</option>'+
+      '</select>'+
+    '</div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-primary" onclick="confirmarEditMassa('+JSON.stringify([])+')">&#10003; Aplicar alteracoes</button>'
+  );
+  // patch: reescreve o botao com os ids corretos apos o modal abrir
+  setTimeout(()=>{
+    const footer=document.getElementById('modalFooter');
+    if(footer){
+      const btn=footer.querySelector('.btn-primary');
+      if(btn)btn.setAttribute('onclick','confirmarEditMassa('+JSON.stringify(ids)+')');
+    }
+  },50);
+}
+function confirmarEditMassa(ids){
+  const novoValorStr=document.getElementById('massaValor').value.trim();
+  const novoStatus=document.getElementById('massaStatus').value;
+  const novoValor=novoValorStr!==''?parseFloat(novoValorStr):null;
+  if(novoValor===null&&novoStatus===''){alert('Nenhuma alteracao definida. Preencha pelo menos um campo.');return;}
+  if(novoValor!==null&&(isNaN(novoValor)||novoValor<0)){alert('Valor de mensalidade invalido.');return;}
+  let alterados=0;
+  ids.forEach(id=>{
+    const t=db.trabalhadores.find(x=>x.id===id);
+    if(!t)return;
+    if(novoValor!==null){
+      const valorAntigo=t.valorMensalidade;
+      t.valorMensalidade=novoValor;
+      if(valorAntigo!==novoValor){
+        db.mensalidades.forEach(m=>{
+          if(m.trabalhadorId===t.id&&m.status==='pendente'){m.valor=novoValor;}
+        });
+      }
+    }
+    if(novoStatus!==''){
+      // aplica status sem retroatividade — apenas o campo ativo do trabalhador
+      t.ativo=(novoStatus==='true');
+    }
+    alterados++;
+  });
+  salvarDB();
+  closeModal();
+  renderTrabs();
+  alert(alterados+' trabalhador(es) atualizados com sucesso.');
+}
+
 function formTrab(t){
   const compInfo=t.competenciaEntrada&&t.competenciaEntrada!=='legado'
     ?'<div class="form-group"><label class="form-label">Competencia de entrada</label><input type="text" class="form-control" value="'+t.competenciaEntrada+'" readonly style="background:var(--creme);color:var(--texto3);cursor:default;" title="Periodo em que o trabalhador foi cadastrado. Nao pode ser alterado."></div>'
@@ -984,9 +1153,9 @@ Object.assign(window,{
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
-  gerarMes,darBaixa,confirmarBaixa,estornar,
+  gerarMes,darBaixa,confirmarBaixa,estornar,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,
-  novoTrab,editTrab,salvarTrab,delTrab,
+  novoTrab,editTrab,salvarTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
   confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,
