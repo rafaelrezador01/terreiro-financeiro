@@ -444,7 +444,7 @@ function renderDashboard(){
 
 // MENSALIDADES
 function pgMensalidades(){
-  document.getElementById('topbarActions').innerHTML='<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mes</button>';
+  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mes</button></div>';
   renderMens();
 }
 function renderMens(){
@@ -770,7 +770,7 @@ function delTrab(id){confirmar('Excluir este trabalhador?',()=>{db.trabalhadores
 
 // CANTINA
 function pgCantina(){
-  document.getElementById('topbarActions').innerHTML='<button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button>';
+  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"novaCantina()\">+ Movimento</button></div>';
   renderCantina();
 }
 function renderCantina(){
@@ -807,7 +807,7 @@ function delCantina(id){confirmar('Excluir este movimento?',()=>{
 
 // RIFAS
 function pgRifas(){
-  document.getElementById('topbarActions').innerHTML='<button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button>';
+  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"novaRifa()\">+ Nova rifa/evento</button></div>';
   renderRifas();
 }
 function renderRifas(){
@@ -851,7 +851,7 @@ function delRifa(id){confirmar('Excluir esta rifa/evento?',()=>{
 
 // RELATORIOS
 function pgRelatorios(){
-  document.getElementById('topbarActions').innerHTML='<button class="btn btn-outline" onclick="window.print()">&#128438; Imprimir</button>';
+  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-outline\" onclick=\"window.print()\">&#128438; Imprimir</button></div>';
   const ano=filtroAno;
   let saldoAcum=calcularSaldoInicial(1,ano); // saldo inicial de janeiro do ano selecionado
   const resumos=Array.from({length:12},(_,i)=>{
