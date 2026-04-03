@@ -158,36 +158,6 @@ th .cb-select{accent-color:var(--branco);}
   #filtroGlobal select{font-size:11px;padding:5px 6px;}
 }
 @media print{.sidebar,.topbar,.btn,.hamburger,#filtroGlobal{display:none!important;}.main{margin-left:0;}}
-
-/* ── Importação de extrato PDF ── */
-.import-overlay{position:fixed;inset:0;background:var(--creme);z-index:300;display:flex;flex-direction:column;overflow:hidden;}
-.import-topbar{background:var(--branco);border-bottom:1px solid var(--borda);padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0;}
-.import-topbar-title{font-family:'Playfair Display',serif;font-size:20px;font-weight:500;}
-.import-body{flex:1;overflow-y:auto;padding:24px 28px;}
-.import-actions-bar{background:var(--branco);border-top:1px solid var(--borda);padding:14px 28px;display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap;}
-.review-card{background:var(--branco);border:1.5px solid var(--borda);border-radius:var(--radius);padding:16px 20px;margin-bottom:12px;transition:border-color .2s;}
-.review-card.aprovado{border-color:var(--verde);background:var(--verde-bg);}
-.review-card.descartado{opacity:0.45;border-color:var(--borda);background:var(--creme2);}
-.review-card.editando{border-color:var(--amarelo);background:var(--amarelo-bg);}
-.review-card-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.review-card-info{flex:1;min-width:0;}
-.review-card-desc{font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.review-card-meta{font-size:12px;color:var(--texto3);margin-top:3px;}
-.review-card-valor{font-family:'Playfair Display',serif;font-size:18px;font-weight:500;white-space:nowrap;}
-.review-card-actions{display:flex;gap:6px;flex-shrink:0;}
-.review-edit-form{margin-top:14px;padding-top:14px;border-top:1px solid var(--borda);display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.import-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px;color:var(--texto3);}
-.import-loading-spinner{width:40px;height:40px;border:3px solid var(--creme2);border-top-color:var(--verde);border-radius:50%;animation:spin .8s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.import-stats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
-.import-stat{background:var(--branco);border:1px solid var(--borda);border-radius:var(--radius-sm);padding:10px 16px;font-size:13px;color:var(--texto2);}
-.import-stat strong{display:block;font-size:18px;font-family:'Playfair Display',serif;color:var(--texto);}
-@media(max-width:600px){
-  .review-edit-form{grid-template-columns:1fr;}
-  .import-body{padding:14px;}
-  .import-topbar{padding:12px 14px;}
-  .import-actions-bar{padding:12px 14px;}
-}
 </style>
 </head>
 <body>
@@ -538,11 +508,13 @@ function limparSelMens(){
   if(cbH)cbH.checked=false;
   atualizarBulkMens();
 }
+let _idsBaixaMassa=[];
 function baixaMassa(){
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});
   if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
+  _idsBaixaMassa=pendentes;
   const formas=['PIX','Dinheiro','Transferencia','Cartao'];
   openModal(
     'Baixa em massa \u2014 '+pendentes.length+' mensalidade(s)',
@@ -550,13 +522,16 @@ function baixaMassa(){
     '<div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxDataMassa" value="'+hoje()+'"></div>'+
     '<div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxFormaMassa">'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
-    '<button class="btn btn-primary" onclick="confirmarBaixaMassa('+JSON.stringify(pendentes)+')">✓ Confirmar baixa em massa</button>'
+    '<button class="btn btn-primary" onclick="confirmarBaixaMassa()">✓ Confirmar baixa em massa</button>'
   );
 }
-function confirmarBaixaMassa(ids){
+function confirmarBaixaMassa(){
+  const ids=_idsBaixaMassa;
+  if(!ids||!ids.length){alert('Nenhuma mensalidade selecionada.');return;}
   const data=document.getElementById('bxDataMassa').value;
   const forma=document.getElementById('bxFormaMassa').value;
   if(!data){alert('Informe a data.');return;}
+  if(!forma){alert('Informe a forma de pagamento.');return;}
   ids.forEach(id=>{
     const m=db.mensalidades.find(x=>x.id===id);
     if(!m||m.status==='pago')return;
@@ -680,7 +655,7 @@ function estornar(id){
 // LANCAMENTOS
 function setFiltroTipoLanc(v){filtroTipoLanc=v;renderLanc();}
 function pgLancamentos(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);"><button class="btn btn-ghost" onclick="abrirImportarPDF()" title="Importar extrato PDF">&#128196; Importar PDF</button><button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);"><button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
   renderLanc();
 }
 function renderLanc(){
@@ -1175,372 +1150,6 @@ function carregarExemplos(){
   salvarDB();
 }
 
-
-// ═══════════════════════════════════════════════════════════════
-// IMPORTAÇÃO DE EXTRATO PDF (PicPay / qualquer banco)
-// ═══════════════════════════════════════════════════════════════
-
-// Estado da importação (em memória, não vai para o Firebase)
-let _importLancamentos = [];   // array de lançamentos em revisão
-let _importArquivoBase64 = ''; // PDF em base64 para enviar à API
-
-function abrirImportarPDF(){
-  // cria input file oculto e dispara
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.pdf,application/pdf';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const base64 = await lerArquivoBase64(file);
-    _importArquivoBase64 = base64;
-    await processarPDFComClaude(file.name);
-  };
-  input.click();
-}
-
-function lerArquivoBase64(file){
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(reader.result.split(',')[1]);
-    reader.onerror = () => rej(new Error('Falha ao ler arquivo'));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function processarPDFComClaude(nomeArquivo){
-  // Exibe tela de loading
-  mostrarTelaImportacao('<div class="import-loading"><div class="import-loading-spinner"></div><div style="font-size:15px;font-weight:500;">Lendo extrato...</div><div style="font-size:13px;margin-top:4px;">O Claude está analisando o PDF do PicPay</div></div>', true);
-
-  const prompt = `Você é um assistente financeiro. Analise este extrato bancário do PicPay e extraia TODAS as transações encontradas.
-
-Retorne APENAS um JSON válido, sem texto antes ou depois, sem markdown, sem backticks. O formato deve ser exatamente:
-{
-  "transacoes": [
-    {
-      "data": "YYYY-MM-DD",
-      "descricao": "descrição limpa da transação",
-      "valor": 0.00,
-      "tipo": "receita ou despesa",
-      "categoria": "uma das categorias abaixo",
-      "formaPagamento": "PIX"
-    }
-  ]
-}
-
-Regras:
-- "tipo": use "receita" para entradas/recebimentos, "despesa" para saídas/pagamentos
-- "categoria": escolha a mais adequada entre: Mensalidade, Cantina, Rifa, Doação, Curso, Material, Manutenção, Água/Luz, Outros
-- "valor": sempre positivo (o tipo já indica entrada/saída)
-- "data": formato YYYY-MM-DD obrigatório
-- "formaPagamento": use "PIX" para transferências PIX, "Dinheiro", "Cartão" ou "Transferência" conforme indicado
-- "descricao": texto descritivo limpo, sem códigos internos do banco
-- Se não encontrar transações claras, retorne {"transacoes": []}
-- Ignore saldo, taxas de emissão do extrato, cabeçalhos e rodapés`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: _importArquivoBase64
-              }
-            },
-            { type: 'text', text: prompt }
-          ]
-        }]
-      })
-    });
-
-    if(!response.ok){
-      const err = await response.json().catch(()=>({}));
-      throw new Error(err.error?.message || 'Erro na API ('+response.status+')');
-    }
-
-    const data = await response.json();
-    const texto = data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-
-    // Parse JSON — limpa possíveis backticks
-    const jsonStr = texto.replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(jsonStr);
-    const transacoes = parsed.transacoes || [];
-
-    if(transacoes.length === 0){
-      mostrarTelaImportacao(
-        '<div class="import-loading"><div style="font-size:40px;">&#128269;</div>'+
-        '<div style="font-size:15px;font-weight:500;">Nenhuma transação encontrada</div>'+
-        '<div style="font-size:13px;color:var(--texto3);max-width:360px;text-align:center;">O Claude não identificou transações neste PDF. Verifique se é um extrato bancário válido do PicPay.</div>'+
-        '<button class="btn btn-ghost" onclick="fecharImportacao()" style="margin-top:8px;">Fechar</button></div>',
-        true
-      );
-      return;
-    }
-
-    // Prepara lançamentos com estado de revisão
-    _importLancamentos = transacoes.map((t, i) => ({
-      ...t,
-      _id: 'imp_' + i,
-      _status: 'pendente', // pendente | aprovado | descartado
-      _editando: false,
-      valor: parseFloat(t.valor) || 0
-    }));
-
-    renderTelaRevisao(nomeArquivo);
-
-  } catch(err) {
-    mostrarTelaImportacao(
-      '<div class="import-loading"><div style="font-size:40px;">&#9888;&#65039;</div>'+
-      '<div style="font-size:15px;font-weight:500;color:var(--vermelho);">Erro ao processar PDF</div>'+
-      '<div style="font-size:13px;color:var(--texto3);max-width:400px;text-align:center;">'+err.message+'</div>'+
-      '<button class="btn btn-ghost" onclick="fecharImportacao()" style="margin-top:8px;">Fechar</button></div>',
-      true
-    );
-  }
-}
-
-function mostrarTelaImportacao(conteudoBody, semActions){
-  // Remove overlay anterior se existir
-  document.getElementById('importOverlay')?.remove();
-
-  const overlay = document.createElement('div');
-  overlay.id = 'importOverlay';
-  overlay.className = 'import-overlay';
-  overlay.innerHTML =
-    '<div class="import-topbar">'+
-      '<div class="import-topbar-title">&#128196; Importar Extrato PDF</div>'+
-      '<button class="btn btn-ghost btn-sm" onclick="fecharImportacao()">&#10005; Fechar</button>'+
-    '</div>'+
-    '<div class="import-body" id="importBody">'+conteudoBody+'</div>'+
-    (semActions ? '' :
-      '<div class="import-actions-bar" id="importActionsBar"></div>'
-    );
-  document.body.appendChild(overlay);
-}
-
-function fecharImportacao(){
-  document.getElementById('importOverlay')?.remove();
-  _importLancamentos = [];
-  _importArquivoBase64 = '';
-}
-
-function renderTelaRevisao(nomeArquivo){
-  const total = _importLancamentos.length;
-  const aprovados = _importLancamentos.filter(l=>l._status==='aprovado').length;
-  const descartados = _importLancamentos.filter(l=>l._status==='descartado').length;
-  const pendentes = total - aprovados - descartados;
-  const totalEntradas = _importLancamentos.filter(l=>l._status!=='descartado'&&l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
-  const totalSaidas = _importLancamentos.filter(l=>l._status!=='descartado'&&l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
-
-  const cats = ['Mensalidade','Cantina','Rifa','Doação','Curso','Material','Manutenção','Água/Luz','Outros'];
-  const formas = ['PIX','Dinheiro','Cartão','Transferência','Cheque'];
-
-  let cardsHTML = _importLancamentos.map(l => {
-    const isAprov = l._status === 'aprovado';
-    const isDesc = l._status === 'descartado';
-    const isEdit = l._editando;
-    let cardClass = 'review-card';
-    if(isAprov) cardClass += ' aprovado';
-    else if(isDesc) cardClass += ' descartado';
-    else if(isEdit) cardClass += ' editando';
-
-    const statusIcon = isAprov ? '&#10003;' : (isDesc ? '&#10005;' : '&#9711;');
-    const statusColor = isAprov ? 'var(--verde)' : (isDesc ? 'var(--texto3)' : 'var(--texto2)');
-
-    const editForm = isEdit ? `
-      <div class="review-edit-form">
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Data</label>
-          <input type="date" class="form-control" id="ei_data_${l._id}" value="${l.data||''}">
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Tipo</label>
-          <select class="form-control" id="ei_tipo_${l._id}">
-            <option value="receita" ${l.tipo==='receita'?'selected':''}>Receita (entrada)</option>
-            <option value="despesa" ${l.tipo==='despesa'?'selected':''}>Despesa (saída)</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin:0;grid-column:1/-1;">
-          <label class="form-label">Descrição</label>
-          <input type="text" class="form-control" id="ei_desc_${l._id}" value="${(l.descricao||'').replace(/"/g,'&quot;')}">
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Categoria</label>
-          <select class="form-control" id="ei_cat_${l._id}">
-            ${cats.map(c=>`<option ${c===l.categoria?'selected':''}>${c}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Valor (R$)</label>
-          <input type="number" class="form-control" id="ei_valor_${l._id}" value="${l.valor}" min="0" step="0.01">
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Forma de pagamento</label>
-          <select class="form-control" id="ei_forma_${l._id}">
-            ${formas.map(f=>`<option ${f===l.formaPagamento?'selected':''}>${f}</option>`).join('')}
-          </select>
-        </div>
-        <div style="grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn btn-ghost btn-sm" onclick="cancelarEdicaoRevisao('${l._id}')">Cancelar</button>
-          <button class="btn btn-primary btn-sm" onclick="salvarEdicaoRevisao('${l._id}')">&#10003; Salvar edição</button>
-        </div>
-      </div>` : '';
-
-    return `<div class="${cardClass}" id="rc_${l._id}">
-      <div class="review-card-header">
-        <div style="font-size:20px;color:${statusColor};flex-shrink:0;">${statusIcon}</div>
-        <div class="review-card-info">
-          <div class="review-card-desc">${l.descricao||'(sem descrição)'}</div>
-          <div class="review-card-meta">${l.data?fmtData(l.data):'-'} &nbsp;·&nbsp; <span class="badge ${l.tipo==='receita'?'badge-verde':'badge-vermelho'}">${l.categoria||'Outros'}</span> &nbsp;·&nbsp; ${l.formaPagamento||'PIX'}</div>
-        </div>
-        <div class="review-card-valor ${l.tipo==='receita'?'valor-positivo':'valor-negativo'}">${l.tipo==='receita'?'+':'-'}${fmt(l.valor)}</div>
-        <div class="review-card-actions">
-          ${!isDesc && !isAprov ? `<button class="btn btn-sm" style="background:var(--verde-bg);color:var(--verde);border:1.5px solid var(--verde);padding:5px 10px;" onclick="aprovarRevisao('${l._id}')" title="Aprovar">&#10003;</button>` : ''}
-          ${isAprov ? `<button class="btn btn-sm btn-ghost" style="padding:5px 10px;" onclick="reabrirRevisao('${l._id}')" title="Desfazer aprovação">&#8617;</button>` : ''}
-          ${!isDesc ? `<button class="btn btn-sm btn-outline" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);" onclick="editarRevisao('${l._id}')" title="Editar">&#9999;&#65039;</button>` : ''}
-          ${!isDesc ? `<button class="btn btn-sm btn-ghost" style="padding:5px 10px;" onclick="descartarRevisao('${l._id}')" title="Descartar">&#128465;</button>` : ''}
-          ${isDesc ? `<button class="btn btn-sm btn-ghost" style="padding:5px 10px;" onclick="reabrirRevisao('${l._id}')" title="Restaurar">&#8617; Restaurar</button>` : ''}
-        </div>
-      </div>
-      ${editForm}
-    </div>`;
-  }).join('');
-
-  const statsHTML = `
-    <div class="import-stats">
-      <div class="import-stat"><strong>${total}</strong>encontradas</div>
-      <div class="import-stat"><strong style="color:var(--verde);">${aprovados}</strong>aprovadas</div>
-      <div class="import-stat"><strong style="color:var(--texto3);">${pendentes}</strong>pendentes</div>
-      <div class="import-stat"><strong style="color:var(--texto3);">${descartados}</strong>descartadas</div>
-      <div class="import-stat"><strong style="color:var(--verde);">${fmt(totalEntradas)}</strong>entradas</div>
-      <div class="import-stat"><strong style="color:var(--vermelho);">${fmt(totalSaidas)}</strong>saídas</div>
-    </div>`;
-
-  const alertHTML = nomeArquivo ?
-    `<div class="alert alert-azul mb-4" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);margin-bottom:16px;">
-      &#128196; <strong>${nomeArquivo}</strong> &nbsp;·&nbsp; ${total} transação(ões) identificada(s) pelo Claude. Revise e aprove cada uma antes de importar.
-    </div>` : '';
-
-  // Atualiza body
-  const bodyEl = document.getElementById('importBody');
-  if(bodyEl) bodyEl.innerHTML = alertHTML + statsHTML + cardsHTML;
-
-  // Atualiza barra de ações
-  const actBar = document.getElementById('importActionsBar');
-  if(actBar){
-    const temPendentes = pendentes > 0;
-    const temAprovados = aprovados > 0;
-    actBar.innerHTML =
-      `<span style="font-size:13px;color:var(--texto2);flex:1;">${aprovados} de ${total} selecionadas para importar</span>`+
-      (temPendentes ? `<button class="btn btn-ghost btn-sm" onclick="aprovarTodosRevisao()">&#10003;&#10003; Aprovar todos pendentes</button>` : '')+
-      (temAprovados ? `<button class="btn btn-primary" onclick="confirmarImportacao()">&#10515; Importar ${aprovados} lançamento(s)</button>` : '')+
-      `<button class="btn btn-ghost btn-sm" onclick="fecharImportacao()">Cancelar</button>`;
-  }
-}
-
-// ── Ações individuais de revisão ──────────────────────────────────────────────
-function aprovarRevisao(id){
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  l._status = 'aprovado';
-  l._editando = false;
-  renderTelaRevisao(null);
-}
-function descartarRevisao(id){
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  l._status = 'descartado';
-  l._editando = false;
-  renderTelaRevisao(null);
-}
-function reabrirRevisao(id){
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  l._status = 'pendente';
-  l._editando = false;
-  renderTelaRevisao(null);
-}
-function editarRevisao(id){
-  // fecha qualquer edição aberta
-  _importLancamentos.forEach(l=>{ l._editando = false; });
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  l._editando = true;
-  renderTelaRevisao(null);
-  // scrolla para o card
-  setTimeout(()=>{
-    document.getElementById('rc_'+id)?.scrollIntoView({behavior:'smooth',block:'center'});
-  }, 80);
-}
-function cancelarEdicaoRevisao(id){
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  l._editando = false;
-  renderTelaRevisao(null);
-}
-function salvarEdicaoRevisao(id){
-  const l = _importLancamentos.find(x=>x._id===id);
-  if(!l) return;
-  const data   = document.getElementById('ei_data_'+id)?.value;
-  const desc   = document.getElementById('ei_desc_'+id)?.value.trim();
-  const tipo   = document.getElementById('ei_tipo_'+id)?.value;
-  const cat    = document.getElementById('ei_cat_'+id)?.value;
-  const valor  = parseFloat(document.getElementById('ei_valor_'+id)?.value);
-  const forma  = document.getElementById('ei_forma_'+id)?.value;
-  if(!data||!desc||!valor||valor<=0){ alert('Preencha todos os campos corretamente.'); return; }
-  l.data = data;
-  l.descricao = desc;
-  l.tipo = tipo;
-  l.categoria = cat;
-  l.valor = valor;
-  l.formaPagamento = forma;
-  l._editando = false;
-  l._status = 'aprovado'; // ao editar e salvar, aprova automaticamente
-  renderTelaRevisao(null);
-}
-function aprovarTodosRevisao(){
-  _importLancamentos.forEach(l=>{
-    if(l._status==='pendente'){ l._status='aprovado'; l._editando=false; }
-  });
-  renderTelaRevisao(null);
-}
-
-// ── Confirmar importação final ────────────────────────────────────────────────
-function confirmarImportacao(){
-  const aprovados = _importLancamentos.filter(l=>l._status==='aprovado');
-  if(!aprovados.length){ alert('Nenhum lançamento aprovado para importar.'); return; }
-  if(!confirm('Importar '+aprovados.length+' lançamento(s) para o sistema?')) return;
-
-  aprovados.forEach(l => {
-    db.lancamentos.push({
-      id: uid(),
-      data: l.data,
-      tipo: l.tipo,
-      categoria: l.categoria || 'Outros',
-      descricao: l.descricao,
-      valor: l.valor,
-      formaPagamento: l.formaPagamento || 'PIX',
-      status: 'confirmado'
-    });
-  });
-
-  salvarDB();
-  fecharImportacao();
-
-  // Vai para aba lançamentos e re-renderiza
-  navigate('lancamentos');
-  alert('✓ '+aprovados.length+' lançamento(s) importado(s) com sucesso!');
-}
-
 // expõe funções no window pois o script é type=module
 Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,
@@ -1550,7 +1159,6 @@ Object.assign(window,{
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,darBaixa,confirmarBaixa,estornar,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
-  abrirImportarPDF,fecharImportacao,aprovarRevisao,descartarRevisao,reabrirRevisao,editarRevisao,cancelarEdicaoRevisao,salvarEdicaoRevisao,aprovarTodosRevisao,confirmarImportacao,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,
   novoTrab,editTrab,salvarTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,
