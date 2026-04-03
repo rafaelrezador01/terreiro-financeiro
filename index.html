@@ -164,7 +164,7 @@ th .cb-select{accent-color:var(--branco);}
 <div class="overlay-sidebar" id="overlayBg" onclick="closeSidebar()" style="display:none;"></div>
 <div class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <div class="sidebar-logo">&#9789; Axe Financeiro</div>
+    <div class="sidebar-logo">&#9789; Financeiro | TULUCA</div>
     <div class="sidebar-sub">Sistema de gestao</div>
   </div>
   <nav class="sidebar-nav">
@@ -398,9 +398,10 @@ function renderDashboard(){
   const mes=filtroMes,ano=filtroAno;
   const{saldoInicial,ent,sai,resultado,saldoFinal}=fluxoMes(mes,ano);
 
-  // mensalidades: apenas de trabalhadores válidos no período
+  // mensalidades: apenas de trabalhadores válidos no período, excluindo isentos dos cálculos
   const idsValidos=new Set(trabsValidosParaPeriodo(mes,ano).map(t=>t.id));
-  const mm=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
+  const mmTodos=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
+  const mm=mmTodos.filter(m=>m.status!=='isento'); // isentos fora dos totais
   const pg=mm.filter(m=>m.status==='pago');
   const pe=mm.filter(m=>m.status==='pendente');
   const recebMens=pg.reduce((a,m)=>a+m.valor,0);
@@ -459,24 +460,41 @@ function renderMens(){
   const idsValidos=new Set(validos.map(t=>t.id));
   const lista=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
   const listaInativa=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&!idsValidos.has(m.trabalhadorId));
-  const pg=lista.filter(m=>m.status==='pago');
-  const pe=lista.filter(m=>m.status==='pendente');
-  const totalV=lista.reduce((a,m)=>a+m.valor,0);
+  // isentos não entram nos totais financeiros
+  const listaCobrada=lista.filter(m=>m.status!=='isento');
+  const pg=listaCobrada.filter(m=>m.status==='pago');
+  const pe=listaCobrada.filter(m=>m.status==='pendente');
+  const totalV=listaCobrada.reduce((a,m)=>a+m.valor,0);
   const recV=pg.reduce((a,m)=>a+m.valor,0);
   let lin='';
   if(lista.length===0){lin='<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em &quot;Gerar mes&quot; para criar automaticamente</p></div></td></tr>';}
-  else{[...pe,...pg].forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" '+(m.status==='pago'?'disabled title="Ja pago"':'')+'></td><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';});}
+  else{
+    // ordena: isentos no final, depois pendentes, depois pagos
+    const ordenada=[...pe,...pg,...lista.filter(m=>m.status==='isento')];
+    ordenada.forEach(m=>{
+      const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
+      if(m.status==='isento'){
+        // linha especial para isentos: badge cinza, sem checkbox ativo, sem botão de baixa
+        lin+='<tr style="opacity:0.7;"><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" disabled title="Isento neste mês"></td><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td><span class="text-muted">—</span></td><td><span class="badge badge-cinza">Isento</span></td><td>—</td><td><span class="text-muted" style="font-size:12px;">Mês de entrada</span></td></tr>';
+      } else {
+        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" '+(m.status==='pago'?'disabled title="Ja pago"':'')+'></td><td><strong>'+(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+t.apelido+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';
+      }
+    });
+  }
   let linInat='';
   if(listaInativa.length>0){
     linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/não existentes neste período foram exluídas dos totais.</div>';
   }
+  const isentosCount=lista.filter(m=>m.status==='isento').length;
+  const isentosInfo=isentosCount>0?'<div class="alert alert-azul" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);margin-bottom:16px;font-size:13px;">&#128336; '+isentosCount+' trabalhador(es) isento(s) neste mês (mês de entrada — cobrança inicia no próximo mês).</div>':'';
   document.getElementById('pageContent').innerHTML=
     '<div class="page">'+
     '<div class="grid-3 mb-6">'+
-      '<div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+lista.length+' trabalhador(es) valido(s)</div></div>'+
+      '<div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+listaCobrada.length+' trabalhador(es) cobrado(s)'+(isentosCount>0?' · '+isentosCount+' isento(s)':'')+'</div></div>'+
       '<div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div>'+
       '<div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div>'+
     '</div>'+
+    isentosInfo+
     '<div id="bulkBarMens" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
       '<button class="btn btn-primary btn-sm" onclick="baixaMassa()">&#10003; Dar baixa selecionadas</button>'+
@@ -512,8 +530,7 @@ let _idsBaixaMassa=[];
 function baixaMassa(){
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
-  const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});
-  if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
+  const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});  if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
   _idsBaixaMassa=pendentes;
   const formas=['PIX','Dinheiro','Transferencia','Cartao'];
   openModal(
@@ -580,9 +597,21 @@ function trabExisteNoPeriodo(t,mes,ano){
 function trabAtivoNoPeriodo(t){
   return t.ativo!==false;
 }
+// retorna true se o trabalhador deve ser COBRADO no período
+// regra: só cobra a partir do mês SEGUINTE ao cadastro
+function trabElegivelParaCobranca(t,mes,ano){
+  const entrada=competenciaEntradaNum(t);
+  if(entrada===0)return true; // legado: sempre cobrado
+  // elegível apenas se a competência de entrada for ANTERIOR ao período atual
+  return entrada<periodoParaNum(mes,ano);
+}
 // retorna trabalhadores válidos para o período: existem + ativos
 function trabsValidosParaPeriodo(mes,ano){
   return db.trabalhadores.filter(t=>trabExisteNoPeriodo(t,mes,ano)&&trabAtivoNoPeriodo(t));
+}
+// retorna trabalhadores elegíveis para cobrança no período (existem + ativos + não são mês de entrada)
+function trabsElegiveisParaCobranca(mes,ano){
+  return db.trabalhadores.filter(t=>trabExisteNoPeriodo(t,mes,ano)&&trabAtivoNoPeriodo(t)&&trabElegivelParaCobranca(t,mes,ano));
 }
 // migração segura: garante competenciaEntrada em todos os trabalhadores
 function migrarTrabalhadores(){
@@ -611,7 +640,10 @@ function gerarMes(){
   let n=0;
   validos.forEach(t=>{
     if(!db.mensalidades.find(m=>m.mes===mes&&m.ano===ano&&m.trabalhadorId===t.id)){
-      db.mensalidades.push({id:uid(),trabalhadorId:t.id,mes,ano,valor:t.valorMensalidade||50,status:'pendente',dataPagamento:null,obs:''});
+      // se o mês de entrada é igual ao período atual → ISENTO; caso contrário → pendente
+      const elegivel=trabElegivelParaCobranca(t,mes,ano);
+      const statusInicial=elegivel?'pendente':'isento';
+      db.mensalidades.push({id:uid(),trabalhadorId:t.id,mes,ano,valor:t.valorMensalidade||50,status:statusInicial,dataPagamento:null,obs:''});
       n++;
     }
   });
@@ -621,11 +653,13 @@ function gerarMes(){
 }
 function darBaixa(id){
   const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
+  if(m.status==='isento'){alert('Este trabalhador está isento no mês de entrada e não pode ter baixa registrada.');return;}
   const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
   openModal('Dar baixa - '+t.nome,'<div class="alert alert-amarelo">&#128176; Valor: '+fmt(m.valor)+' - '+mesNome(m.mes)+'/'+m.ano+'</div><div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxData" value="'+hoje()+'"></div><div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxForma"><option>PIX</option><option>Dinheiro</option><option>Transferencia</option><option>Cartao</option></select></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarBaixa(\''+id+'\')">&#10003; Confirmar pagamento</button>');
 }
 function confirmarBaixa(id){
   const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
+  if(m.status==='isento'){alert('Mensalidade isenta não pode ser baixada.');return;}
   const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
   m.status='pago';
   m.dataPagamento=document.getElementById('bxData').value;
@@ -930,7 +964,10 @@ function salvarTrab(id){
     if(trabExisteNoPeriodo(trabalhador,mes,ano)){
       const jaExiste=db.mensalidades.find(m=>m.trabalhadorId===trabalhador.id&&m.mes===mes&&m.ano===ano);
       if(!jaExiste){
-        db.mensalidades.push({id:uid(),trabalhadorId:trabalhador.id,mes,ano,valor:trabalhador.valorMensalidade||50,status:'pendente',dataPagamento:null,obs:''});
+        // mês de entrada → ISENTO (não gera cobrança); meses posteriores → pendente
+        const elegivel=trabElegivelParaCobranca(trabalhador,mes,ano);
+        const statusInicial=elegivel?'pendente':'isento';
+        db.mensalidades.push({id:uid(),trabalhadorId:trabalhador.id,mes,ano,valor:trabalhador.valorMensalidade||50,status:statusInicial,dataPagamento:null,obs:''});
       }
     }
   }
@@ -1105,7 +1142,7 @@ function pgRelatorios(){
     const res=ent-sai;
     const saldoInicial=saldoAcum;
     saldoAcum+=res;
-    const mm=db.mensalidades.filter(x=>x.mes===m&&x.ano===ano);
+    const mm=db.mensalidades.filter(x=>x.mes===m&&x.ano===ano&&x.status!=='isento');
     return{m,e:ent,s:sai,res,saldoInicial,saldoFinal:saldoAcum,pg:mm.filter(x=>x.status==='pago').length,tot:mm.length};
   });
   const porCat={};
@@ -1154,7 +1191,7 @@ function carregarExemplos(){
 Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
-  trabExisteNoPeriodo,trabAtivoNoPeriodo,trabsValidosParaPeriodo,migrarTrabalhadores,
+  trabExisteNoPeriodo,trabAtivoNoPeriodo,trabElegivelParaCobranca,trabsValidosParaPeriodo,trabsElegiveisParaCobranca,migrarTrabalhadores,
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
