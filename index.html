@@ -662,7 +662,11 @@ function renderDashboard(){
 
 // MENSALIDADES
 function pgMensalidades(){
-  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mês</button></div>';
+  document.getElementById('topbarActions').innerHTML=
+    '<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;\">'+
+      '<button class=\"btn btn-danger\" onclick=\"abrirExcluirMesMensalidades()\">&#128465; Excluir mês</button>'+
+      '<button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mês</button>'+
+    '</div>';
   renderMens();
 }
 function renderMens(){
@@ -875,6 +879,81 @@ function gerarMes(){
   alert(n+' mensalidade(s) gerada(s) para '+mesNome(mes)+'/'+ano+'!');
   renderMens();
 }
+// Reverte a ação "Gerar mês" para o período selecionado.
+// Exclui todas as mensalidades do mês e remove receitas vinculadas às que já foram pagas.
+function abrirExcluirMesMensalidades(){
+  const mes=filtroMes,ano=filtroAno;
+  const mensalidadesMes=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
+  if(!mensalidadesMes.length){
+    alert('Não existem mensalidades geradas para '+mesNome(mes)+'/'+ano+'.');
+    return;
+  }
+
+  const pagas=mensalidadesMes.filter(m=>m.status==='pago');
+  const pendentes=mensalidadesMes.filter(m=>m.status==='pendente');
+  const isentas=mensalidadesMes.filter(m=>m.status==='isento');
+  const valorPago=pagas.reduce((total,m)=>total+(Number(m.valor)||0),0);
+  const avisoPagas=pagas.length
+    ?'<div class="alert alert-vermelho" style="margin-bottom:16px;">&#9888; Existem <strong>'+pagas.length+' mensalidade(s) paga(s)</strong>, somando <strong>'+fmt(valorPago)+'</strong>. Os lançamentos de receita vinculados também serão removidos.</div>'
+    :'<div class="alert alert-amarelo" style="margin-bottom:16px;">Esta ação removerá todas as cobranças geradas para o período selecionado.</div>';
+
+  openModal(
+    'Excluir mensalidades — '+mesNome(mes)+'/'+ano,
+    avisoPagas+
+    '<div class="card card-sm" style="margin-bottom:16px;background:var(--creme);">'+
+      '<div class="flex justify-between" style="margin-bottom:8px;"><span>Total de registros</span><strong>'+mensalidadesMes.length+'</strong></div>'+
+      '<div class="flex justify-between" style="margin-bottom:8px;"><span>Pendentes</span><strong>'+pendentes.length+'</strong></div>'+
+      '<div class="flex justify-between" style="margin-bottom:8px;"><span>Pagas</span><strong>'+pagas.length+'</strong></div>'+
+      '<div class="flex justify-between"><span>Isentas</span><strong>'+isentas.length+'</strong></div>'+
+    '</div>'+
+    '<label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;cursor:pointer;">'+
+      '<input type="checkbox" class="cb-select" id="confirmarExcluirMesMens" style="margin-top:2px;">'+
+      '<span>Entendo que todas as mensalidades de <strong>'+mesNome(mes)+'/'+ano+'</strong> serão excluídas e que será necessário usar “Gerar mês” novamente caso eu queira restaurá-las.</span>'+
+    '</label>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>'+
+    '<button class="btn btn-danger" onclick="excluirMesMensalidades()">&#128465; Excluir mensalidades</button>'
+  );
+}
+
+async function excluirMesMensalidades(){
+  const confirmacao=document.getElementById('confirmarExcluirMesMens');
+  if(!confirmacao||!confirmacao.checked){
+    alert('Marque a confirmação antes de excluir as mensalidades do mês.');
+    return;
+  }
+
+  const mes=filtroMes,ano=filtroAno;
+  const mensalidadesMes=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
+  if(!mensalidadesMes.length){
+    closeModal();
+    renderMens();
+    return;
+  }
+
+  const idsExcluir=new Set(mensalidadesMes.map(m=>m.id));
+  let lancamentosRemovidos=0;
+
+  mensalidadesMes.forEach(m=>{
+    const antes=db.lancamentos.length;
+    if(m.status==='pago'||m.lancamentoId){
+      removerLancamentoDaMensalidade(m);
+    }
+    lancamentosRemovidos+=antes-db.lancamentos.length;
+  });
+
+  db.mensalidades=db.mensalidades.filter(m=>!idsExcluir.has(m.id));
+
+  const resultado=await salvarDB();
+  if(resultado===false)return;
+
+  closeModal();
+  renderMens();
+  alert(
+    mensalidadesMes.length+' mensalidade(s) de '+mesNome(mes)+'/'+ano+' foram excluídas.'+
+    (lancamentosRemovidos?'\n'+lancamentosRemovidos+' lançamento(s) de receita vinculado(s) também foram removido(s).':'')
+  );
+}
+
 function darBaixa(id){
   const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
   if(m.status==='isento'){alert('Este trabalhador está isento no mês de entrada e não pode ter baixa registrada.');return;}
@@ -1603,7 +1682,7 @@ Object.assign(window,{
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
-  gerarMes,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
+  gerarMes,abrirExcluirMesMensalidades,excluirMesMensalidades,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
   novoTrab,editTrab,salvarTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
