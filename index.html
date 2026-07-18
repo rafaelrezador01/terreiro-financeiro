@@ -827,12 +827,50 @@ function trabExisteNoPeriodo(t,mes,ano){
 function trabAtivoNoPeriodo(t){
   return t.ativo!==false;
 }
-// Retorna true quando a isenção permanente já está vigente no período consultado.
+// Converte uma competência numérica (202607) para o formato YYYY-MM.
+function periodoNumParaStr(numero){
+  const ano=Math.floor(numero/100);
+  const mes=numero%100;
+  if(!ano||mes<1||mes>12)return'';
+  return String(ano)+'-'+String(mes).padStart(2,'0');
+}
+// Retorna a competência imediatamente anterior.
+function competenciaAnteriorStr(competencia){
+  const numero=periodoStrParaNum(competencia);
+  if(!numero)return'';
+  const mes=numero%100;
+  const ano=Math.floor(numero/100);
+  return periodoNumParaStr(mes===1?(ano-1)*100+12:ano*100+(mes-1));
+}
+// Normaliza e ordena o histórico de isenções do trabalhador.
+function obterIsencoesMensalidade(t){
+  if(Array.isArray(t.isencoesMensalidade)){
+    return t.isencoesMensalidade
+      .filter(i=>i&&periodoStrParaNum(i.inicio)>0)
+      .map(i=>({inicio:i.inicio,fim:periodoStrParaNum(i.fim)>0?i.fim:null,tag:String(i.tag||'').trim()}))
+      .sort((a,b)=>periodoStrParaNum(a.inicio)-periodoStrParaNum(b.inicio));
+  }
+  // Compatibilidade com a versão anterior, que guardava somente uma isenção aberta.
+  if(t.isentoMensalidade===true){
+    return [{inicio:periodoStrParaNum(t.competenciaIsencao)>0?t.competenciaIsencao:'legado',fim:null,tag:String(t.tagIsencao||'').trim()}];
+  }
+  return[];
+}
+function obterIsencaoAberta(t){
+  const abertas=obterIsencoesMensalidade(t).filter(i=>!i.fim&&periodoStrParaNum(i.inicio)>0);
+  return abertas.length?abertas[abertas.length-1]:null;
+}
+function obterIsencaoNoPeriodo(t,mes,ano){
+  const periodo=periodoParaNum(mes,ano);
+  return obterIsencoesMensalidade(t).find(i=>{
+    const inicio=periodoStrParaNum(i.inicio);
+    const fim=i.fim?periodoStrParaNum(i.fim):Infinity;
+    return inicio>0&&periodo>=inicio&&periodo<=fim;
+  })||null;
+}
+// Retorna true somente quando o período consultado está dentro de um intervalo de isenção.
 function trabIsentoNoPeriodo(t,mes,ano){
-  if(t.isentoMensalidade!==true)return false;
-  const inicio=periodoStrParaNum(t.competenciaIsencao);
-  if(inicio===0)return true; // compatibilidade com registros antigos
-  return periodoParaNum(mes,ano)>=inicio;
+  return obterIsencaoNoPeriodo(t,mes,ano)!==null;
 }
 // retorna true se o trabalhador deve ser COBRADO no período
 // regra: só cobra a partir do mês SEGUINTE ao cadastro e nunca durante isenção vigente
@@ -850,20 +888,35 @@ function trabsValidosParaPeriodo(mes,ano){
 function trabsElegiveisParaCobranca(mes,ano){
   return db.trabalhadores.filter(t=>trabExisteNoPeriodo(t,mes,ano)&&trabAtivoNoPeriodo(t)&&trabElegivelParaCobranca(t,mes,ano));
 }
-// migração segura: garante competenciaEntrada em todos os trabalhadores
+// Migração segura: garante competência de entrada e histórico de isenções.
 function migrarTrabalhadores(){
   let alterou=false;
   db.trabalhadores.forEach(t=>{
     if(!t.competenciaEntrada){
-      // se tem dataIngresso válida, deriva a competencia dela
-      if(t.dataIngresso&&t.dataIngresso.length>=7){
-        t.competenciaEntrada=t.dataIngresso.substring(0,7);
-      } else {
-        // legado sem nenhuma data: marca com flag especial para sempre existir
-        t.competenciaEntrada='legado';
+      if(t.dataIngresso&&t.dataIngresso.length>=7)t.competenciaEntrada=t.dataIngresso.substring(0,7);
+      else t.competenciaEntrada='legado';
+      alterou=true;
+    }
+
+    if(!Array.isArray(t.isencoesMensalidade)){
+      t.isencoesMensalidade=[];
+      if(t.isentoMensalidade===true&&periodoStrParaNum(t.competenciaIsencao)>0){
+        t.isencoesMensalidade.push({
+          inicio:t.competenciaIsencao,
+          fim:null,
+          tag:String(t.tagIsencao||'').trim()
+        });
       }
       alterou=true;
     }
+
+    const aberta=obterIsencaoAberta(t);
+    const novoIsento=!!aberta;
+    const novaCompetencia=aberta?aberta.inicio:null;
+    const novaTag=aberta?aberta.tag:'';
+    if(t.isentoMensalidade!==novoIsento){t.isentoMensalidade=novoIsento;alterou=true;}
+    if((t.competenciaIsencao||null)!==novaCompetencia){t.competenciaIsencao=novaCompetencia;alterou=true;}
+    if((t.tagIsencao||'')!==novaTag){t.tagIsencao=novaTag;alterou=true;}
   });
   if(alterou)salvarDB();
 }
@@ -1243,9 +1296,10 @@ function renderTrabs(){
       const badge=!existeNoPeriodo
         ?'<span class="badge badge-cinza">Nao existia</span>'
         :(t.ativo?'<span class="badge badge-verde">Ativo</span>':'<span class="badge badge-cinza">Inativo</span>');
-      const isencaoVigente=trabIsentoNoPeriodo(t,mes,ano);
+      const isencaoPeriodo=obterIsencaoNoPeriodo(t,mes,ano);
+      const isencaoVigente=!!isencaoPeriodo;
       const badgeIsencao=isencaoVigente
-        ?' <span class="badge badge-amarelo" title="Motivo da isenção">Isento · '+escapeHTML(t.tagIsencao||'Sem justificativa')+'</span>'
+        ?' <span class="badge badge-amarelo" title="Motivo da isenção">Isento · '+escapeHTML(isencaoPeriodo.tag||'Sem justificativa')+'</span>'
         :'';
       const rowStyle=!existeNoPeriodo?'opacity:0.45;':'';
       return '<tr style="'+rowStyle+'"><td><input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()"></td><td><strong>'+escapeHTML(t.nome)+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+escapeHTML(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+badgeIsencao+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td><button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button></td></tr>';
@@ -1371,9 +1425,16 @@ function formTrab(t){
   const compInfo=t.competenciaEntrada&&t.competenciaEntrada!=='legado'
     ?'<div class="form-group"><label class="form-label">Competência de entrada</label><input type="text" class="form-control" value="'+escapeAttr(t.competenciaEntrada)+'" readonly style="background:var(--creme);color:var(--texto3);cursor:default;" title="Período em que o trabalhador foi cadastrado. Não pode ser alterado."></div>'
     :'';
-  const isento=t.isentoMensalidade===true;
-  const competenciaIsencao=t.competenciaIsencao&&t.competenciaIsencao!=='legado'
-    ?'<div class="text-muted" style="margin-top:6px;">Isenção vigente desde '+escapeHTML(t.competenciaIsencao)+'</div>'
+  const isencaoAberta=obterIsencaoAberta(t);
+  const isento=!!isencaoAberta;
+  const competenciaAtual=String(filtroAno)+'-'+String(filtroMes).padStart(2,'0');
+  const fimAoDesmarcar=competenciaAnteriorStr(competenciaAtual);
+  const orientacaoIsencao=isento
+    ?'<div class="text-muted" style="margin-top:8px;">Isenção aberta desde <strong>'+escapeHTML(isencaoAberta.inicio)+'</strong>. Ao desmarcar com o período em <strong>'+mesNome(filtroMes)+'/'+filtroAno+'</strong>, a isenção será encerrada em <strong>'+escapeHTML(fimAoDesmarcar||isencaoAberta.inicio)+'</strong> e a cobrança voltará a partir do período selecionado.</div>'
+    :'<div class="text-muted" style="margin-top:8px;">Ao marcar, uma nova isenção começará em <strong>'+mesNome(filtroMes)+'/'+filtroAno+'</strong> e continuará nos meses seguintes até ser encerrada em uma edição futura.</div>';
+  const historico=obterIsencoesMensalidade(t);
+  const historicoHTML=historico.length
+    ?'<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(122,92,0,0.18);"><div class="form-label" style="margin-bottom:7px;">Histórico de isenções</div>'+historico.map(i=>'<span class="badge badge-cinza" style="margin:0 6px 6px 0;">'+escapeHTML(i.inicio)+' até '+escapeHTML(i.fim||'atual')+(i.tag?' · '+escapeHTML(i.tag):'')+'</span>').join('')+'</div>'
     :'';
   return ''+
     '<div class="form-row">'+
@@ -1391,14 +1452,12 @@ function formTrab(t){
     '<div class="card card-sm" style="margin-bottom:16px;background:var(--amarelo-bg);border-color:rgba(233,196,106,0.55);">'+
       '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;">'+
         '<input type="checkbox" id="tIsentoMensalidade" '+(isento?'checked':'')+' onchange="alternarCampoIsencaoTrab()" style="width:18px;height:18px;accent-color:var(--verde);">'+
-        '<span class="form-label" style="margin:0;">Trabalhador isento de mensalidade</span>'+
-      '</label>'+
-      '<div class="text-muted" style="margin-top:8px;">A isenção valerá a partir de '+mesNome(filtroMes)+'/'+filtroAno+'. Não serão geradas cobranças neste período nem nos seguintes. Pagamentos já realizados serão preservados.</div>'+
-      competenciaIsencao+
+        '<span class="form-label" style="margin:0;">Manter trabalhador isento de mensalidade</span>'+
+      '</label>'+orientacaoIsencao+
       '<div class="form-group" id="tTagIsencaoGrupo" style="margin-top:14px;margin-bottom:0;display:'+(isento?'block':'none')+';">'+
         '<label class="form-label">Tag / justificativa da isenção *</label>'+
-        '<input type="text" class="form-control" id="tTagIsencao" maxlength="60" value="'+escapeAttr(t.tagIsencao||'')+'" placeholder="Ex: Ogã, apoio administrativo, decisão da direção">'+
-      '</div>'+
+        '<input type="text" class="form-control" id="tTagIsencao" maxlength="60" value="'+escapeAttr(isencaoAberta?.tag||'')+'" placeholder="Ex: Ogã, apoio administrativo, decisão da direção">'+
+      '</div>'+historicoHTML+
     '</div>'+compInfo;
 }
 function alternarCampoIsencaoTrab(){
@@ -1415,61 +1474,115 @@ function salvarTrab(id){
   if(!nome){alert('Informe o nome.');return;}
 
   const valorMensalidade=parseFloat(document.getElementById('tValor').value);
-  const isentoMensalidade=document.getElementById('tIsentoMensalidade')?.checked===true;
+  const manterIsencao=document.getElementById('tIsentoMensalidade')?.checked===true;
   const tagIsencao=(document.getElementById('tTagIsencao')?.value||'').trim();
-  if(isentoMensalidade&&!tagIsencao){
+  if(manterIsencao&&!tagIsencao){
     alert('Informe a tag ou justificativa da isenção.');
     document.getElementById('tTagIsencao')?.focus();
     return;
   }
 
   const competenciaAtual=String(filtroAno)+'-'+String(filtroMes).padStart(2,'0');
-  const dados={
+  const periodoAtualNum=periodoParaNum(filtroMes,filtroAno);
+  const dadosBasicos={
     nome,
     apelido:document.getElementById('tApelido').value.trim(),
     telefone:document.getElementById('tTel').value.trim(),
     valorMensalidade:isNaN(valorMensalidade)?50:valorMensalidade,
     dataIngresso:document.getElementById('tData').value,
-    ativo:document.getElementById('tAtivo').checked,
-    isentoMensalidade,
-    tagIsencao:isentoMensalidade?tagIsencao:''
+    ativo:document.getElementById('tAtivo').checked
   };
 
   let trabalhador=null;
   let mensalidadesRemovidas=0;
   let pagamentosPreservados=0;
+  let isencaoEncerrada=false;
+  let cobrancaAtualCriada=false;
 
   if(id){
     trabalhador=db.trabalhadores.find(x=>x.id===id);
     if(!trabalhador){alert('Trabalhador não encontrado.');return;}
     const valorAntigo=trabalhador.valorMensalidade;
-    const eraIsento=trabalhador.isentoMensalidade===true;
-    dados.competenciaIsencao=isentoMensalidade
-      ?(eraIsento&&trabalhador.competenciaIsencao?trabalhador.competenciaIsencao:competenciaAtual)
-      :null;
-    Object.assign(trabalhador,dados);
+    let historico=obterIsencoesMensalidade(trabalhador).map(i=>({...i}));
+    const abertaIndex=historico.findIndex(i=>!i.fim);
+
+    if(manterIsencao){
+      if(abertaIndex>=0){
+        historico[abertaIndex].tag=tagIsencao;
+      }else{
+        historico.push({inicio:competenciaAtual,fim:null,tag:tagIsencao});
+      }
+    }else if(abertaIndex>=0){
+      const inicioNum=periodoStrParaNum(historico[abertaIndex].inicio);
+      if(periodoAtualNum<=inicioNum){
+        // Se o encerramento foi escolhido no próprio mês de início, cancela o intervalo.
+        historico.splice(abertaIndex,1);
+      }else{
+        historico[abertaIndex].fim=competenciaAnteriorStr(competenciaAtual);
+      }
+      isencaoEncerrada=true;
+    }
+
+    historico.sort((a,b)=>periodoStrParaNum(a.inicio)-periodoStrParaNum(b.inicio));
+    Object.assign(trabalhador,dadosBasicos,{isencoesMensalidade:historico});
+    const abertaAtual=obterIsencaoAberta(trabalhador);
+    trabalhador.isentoMensalidade=!!abertaAtual;
+    trabalhador.competenciaIsencao=abertaAtual?abertaAtual.inicio:null;
+    trabalhador.tagIsencao=abertaAtual?abertaAtual.tag:'';
 
     if(valorAntigo!==trabalhador.valorMensalidade){
       db.mensalidades.forEach(m=>{
         if(m.trabalhadorId===trabalhador.id&&m.status==='pendente')m.valor=trabalhador.valorMensalidade;
       });
     }
-    if(trabalhador.isentoMensalidade){
-      const inicio=periodoStrParaNum(trabalhador.competenciaIsencao)||periodoParaNum(filtroMes,filtroAno);
-      const removiveis=db.mensalidades.filter(m=>m.trabalhadorId===trabalhador.id&&periodoParaNum(m.mes,m.ano)>=inicio&&m.status!=='pago');
-      const idsRemoviveis=new Set(removiveis.map(m=>m.id));
-      const lancamentosVinculados=new Set(removiveis.map(m=>m.lancamentoId).filter(Boolean));
-      db.lancamentos=db.lancamentos.filter(l=>!lancamentosVinculados.has(l.id));
-      db.mensalidades=db.mensalidades.filter(m=>!idsRemoviveis.has(m.id));
-      mensalidadesRemovidas=removiveis.length;
-      pagamentosPreservados=db.mensalidades.filter(m=>m.trabalhadorId===trabalhador.id&&periodoParaNum(m.mes,m.ano)>=inicio&&m.status==='pago').length;
+
+    // Remove somente cobranças ainda não pagas que estejam dentro de algum intervalo isento.
+    const removiveis=db.mensalidades.filter(m=>
+      m.trabalhadorId===trabalhador.id&&
+      trabIsentoNoPeriodo(trabalhador,m.mes,m.ano)&&
+      m.status!=='pago'
+    );
+    const idsRemoviveis=new Set(removiveis.map(m=>m.id));
+    const lancamentosVinculados=new Set(removiveis.map(m=>m.lancamentoId).filter(Boolean));
+    db.lancamentos=db.lancamentos.filter(l=>!lancamentosVinculados.has(l.id));
+    db.mensalidades=db.mensalidades.filter(m=>!idsRemoviveis.has(m.id));
+    mensalidadesRemovidas=removiveis.length;
+    pagamentosPreservados=db.mensalidades.filter(m=>
+      m.trabalhadorId===trabalhador.id&&
+      trabIsentoNoPeriodo(trabalhador,m.mes,m.ano)&&
+      m.status==='pago'
+    ).length;
+
+    // Ao encerrar a isenção, a cobrança volta no período selecionado, sem recriar meses anteriores.
+    if(isencaoEncerrada&&
+       trabalhador.ativo!==false&&
+       trabExisteNoPeriodo(trabalhador,filtroMes,filtroAno)&&
+       trabElegivelParaCobranca(trabalhador,filtroMes,filtroAno)){
+      let mensalidadeAtual=db.mensalidades.find(m=>m.trabalhadorId===trabalhador.id&&m.mes===filtroMes&&m.ano===filtroAno);
+      if(!mensalidadeAtual){
+        db.mensalidades.push({
+          id:uid(),trabalhadorId:trabalhador.id,mes:filtroMes,ano:filtroAno,
+          valor:trabalhador.valorMensalidade||50,status:'pendente',dataPagamento:null,obs:''
+        });
+        cobrancaAtualCriada=true;
+      }else if(mensalidadeAtual.status==='isento'){
+        mensalidadeAtual.status='pendente';
+        mensalidadeAtual.valor=trabalhador.valorMensalidade||50;
+        mensalidadeAtual.dataPagamento=null;
+        mensalidadeAtual.lancamentoId=null;
+        cobrancaAtualCriada=true;
+      }
     }
   }else{
+    const historico=manterIsencao?[{inicio:competenciaAtual,fim:null,tag:tagIsencao}]:[];
     trabalhador={
       id:uid(),
-      ...dados,
+      ...dadosBasicos,
       competenciaEntrada:competenciaAtual,
-      competenciaIsencao:isentoMensalidade?competenciaAtual:null
+      isencoesMensalidade:historico,
+      isentoMensalidade:manterIsencao,
+      competenciaIsencao:manterIsencao?competenciaAtual:null,
+      tagIsencao:manterIsencao?tagIsencao:''
     };
     db.trabalhadores.push(trabalhador);
   }
@@ -1490,9 +1603,11 @@ function salvarTrab(id){
   closeModal();
   paginaAtual='trabalhadores';
   pgTrabalhadores();
-  if(mensalidadesRemovidas||pagamentosPreservados){
-    let mensagem='Isenção atualizada.';
-    if(mensalidadesRemovidas)mensagem+=' '+mensalidadesRemovidas+' cobrança(s) pendente(s)/isenta(s) foram removidas.';
+  if(mensalidadesRemovidas||pagamentosPreservados||isencaoEncerrada||cobrancaAtualCriada){
+    let mensagem='Isenção atualizada por período.';
+    if(isencaoEncerrada)mensagem+=' A isenção foi encerrada no mês anterior a '+mesNome(filtroMes)+'/'+filtroAno+'.';
+    if(cobrancaAtualCriada)mensagem+=' A mensalidade de '+mesNome(filtroMes)+'/'+filtroAno+' foi criada como pendente.';
+    if(mensalidadesRemovidas)mensagem+=' '+mensalidadesRemovidas+' cobrança(s) não paga(s) dentro do período isento foram removidas.';
     if(pagamentosPreservados)mensagem+=' '+pagamentosPreservados+' pagamento(s) já realizado(s) foram preservados no histórico.';
     alert(mensagem);
   }
