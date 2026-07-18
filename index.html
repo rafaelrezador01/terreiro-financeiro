@@ -36,6 +36,8 @@ button:focus-visible,[role="button"]:focus-visible,.form-control:focus-visible,.
 .btn-outline:hover{background:var(--verde-bg);}
 .btn-ghost{background:transparent;color:var(--texto2);border:1px solid var(--borda);}
 .btn-ghost:hover{background:var(--creme2);}
+.btn-danger{background:var(--vermelho);color:#fff;}
+.btn-danger:hover{background:#9f0f19;}
 .btn-sm{padding:6px 12px;font-size:13px;}
 .card{background:var(--branco);border-radius:var(--radius);border:1px solid var(--borda);padding:24px;}
 .card-sm{padding:16px;}
@@ -103,6 +105,7 @@ tr:last-child td{border-bottom:none;}
 .bulk-bar-count{font-size:14px;font-weight:500;color:var(--azul);flex:1;}
 .bulk-bar .btn{font-size:13px;}
 .cb-select{width:16px;height:16px;accent-color:var(--verde);cursor:pointer;}
+.cb-select:disabled{cursor:not-allowed;opacity:.45;}
 th .cb-select{accent-color:var(--branco);}
 
 .empty-icon{font-size:40px;margin-bottom:12px;}
@@ -174,9 +177,7 @@ th .cb-select{accent-color:var(--branco);}
   .content{padding:10px;}
   .topbar{padding:8px 10px;}
   .topbar-title{font-size:15px;}
-  /* tabelas: esconde colunas menos importantes */
-  .table-wrap table th:nth-child(4),
-  .table-wrap table td:nth-child(4){display:none;}
+  /* As tabelas permanecem completas e podem ser roladas horizontalmente. */
   .metric-value{font-size:20px;}
   .section-title{font-size:16px;}
   /* dashboard: 5 cards em coluna única */
@@ -670,30 +671,29 @@ function renderMens(){
   const idsValidos=new Set(validos.map(t=>t.id));
   const lista=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&idsValidos.has(m.trabalhadorId));
   const listaInativa=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&!idsValidos.has(m.trabalhadorId));
-  // isentos não entram nos totais financeiros
   const listaCobrada=lista.filter(m=>m.status!=='isento');
   const pg=listaCobrada.filter(m=>m.status==='pago');
   const pe=listaCobrada.filter(m=>m.status==='pendente');
   const totalV=listaCobrada.reduce((a,m)=>a+m.valor,0);
   const recV=pg.reduce((a,m)=>a+m.valor,0);
   let lin='';
-  if(lista.length===0){lin='<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em &quot;Gerar mes&quot; para criar automaticamente</p></div></td></tr>';}
-  else{
-    // ordena: isentos no final, depois pendentes, depois pagos
+  if(lista.length===0){
+    lin='<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128203;</div><p>Nenhuma mensalidade para '+mesNome(mes)+'/'+ano+'</p><p class="text-muted">Clique em &quot;Gerar mes&quot; para criar automaticamente</p></div></td></tr>';
+  }else{
     const ordenada=[...pe,...pg,...lista.filter(m=>m.status==='isento')];
     ordenada.forEach(m=>{
       const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
       if(m.status==='isento'){
-        // linha especial para isentos: badge cinza, sem checkbox ativo, sem botão de baixa
         lin+='<tr style="opacity:0.7;"><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" disabled title="Isento neste mês"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td><span class="text-muted">—</span></td><td><span class="badge badge-cinza">Isento</span></td><td>—</td><td><span class="text-muted" style="font-size:12px;">Mês de entrada</span></td></tr>';
-      } else {
-        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" '+(m.status==='pago'?'disabled title="Ja pago"':'')+'></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';
+      }else{
+        const titulo=m.status==='pago'?'Selecionar para estorno em massa':'Selecionar para baixa em massa';
+        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';
       }
     });
   }
   let linInat='';
   if(listaInativa.length>0){
-    linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/não existentes neste período foram exluídas dos totais.</div>';
+    linInat='<div class="alert alert-cinza mt-4" style="background:var(--creme2);color:var(--texto2);border:1px solid var(--borda);margin-top:16px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;">&#8505; '+listaInativa.length+' mensalidade(s) de trabalhadores inativos/não existentes neste período foram excluídas dos totais.</div>';
   }
   const isentosCount=lista.filter(m=>m.status==='isento').length;
   const isentosInfo=isentosCount>0?'<div class="alert alert-azul" style="background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,0.2);margin-bottom:16px;font-size:13px;">&#128336; '+isentosCount+' trabalhador(es) isento(s) neste mês (mês de entrada — cobrança inicia no próximo mês).</div>':'';
@@ -703,28 +703,42 @@ function renderMens(){
       '<div class="metric"><div class="metric-label">Total do mes</div><div class="metric-value neutro">'+fmt(totalV)+'</div><div class="metric-sub">'+listaCobrada.length+' trabalhador(es) cobrado(s)'+(isentosCount>0?' · '+isentosCount+' isento(s)':'')+'</div></div>'+
       '<div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div>'+
       '<div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div>'+
-    '</div>'+
-    isentosInfo+
+    '</div>'+isentosInfo+
     '<div id="bulkBarMens" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
-      '<button class="btn btn-primary btn-sm" onclick="baixaMassa()">&#10003; Dar baixa selecionadas</button>'+
+      '<button class="btn btn-primary btn-sm" id="bulkBtnBaixaMens" onclick="baixaMassa()">&#10003; Dar baixa</button>'+
+      '<button class="btn btn-danger btn-sm" id="bulkBtnEstornoMens" onclick="estornoMassa()">&#8617; Estornar pagas</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="limparSelMens()">&#10005; Limpar seleção</button>'+
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
-      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar todos pendentes"></th>'+
+      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar mensalidades pagas e pendentes"></th>'+
       '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Ação</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
 }
 function atualizarBulkMens(){
   const cbs=[...document.querySelectorAll('.cb-mens:checked')];
+  const selecionadas=cbs.map(c=>db.mensalidades.find(m=>m.id===c.dataset.id)).filter(Boolean);
+  const pendentes=selecionadas.filter(m=>m.status==='pendente').length;
+  const pagas=selecionadas.filter(m=>m.status==='pago').length;
   const bar=document.getElementById('bulkBarMens');
   const cnt=document.getElementById('bulkCountMens');
-  if(cbs.length>0){bar.style.display='flex';cnt.textContent=cbs.length+' mensalidade(s) selecionada(s)';}
-  else{bar.style.display='none';}
+  const btnBaixa=document.getElementById('bulkBtnBaixaMens');
+  const btnEstorno=document.getElementById('bulkBtnEstornoMens');
+  if(cbs.length>0){
+    bar.style.display='flex';
+    cnt.textContent=cbs.length+' selecionada(s) · '+pendentes+' pendente(s) · '+pagas+' paga(s)';
+  }else{
+    bar.style.display='none';
+  }
+  if(btnBaixa){btnBaixa.style.display=pendentes>0?'inline-flex':'none';btnBaixa.textContent='✓ Dar baixa ('+pendentes+')';}
+  if(btnEstorno){btnEstorno.style.display=pagas>0?'inline-flex':'none';btnEstorno.textContent='↩ Estornar ('+pagas+')';}
   const todos=[...document.querySelectorAll('.cb-mens:not(:disabled)')];
   const cbH=document.getElementById('cbTodosMens');
-  if(cbH)cbH.checked=todos.length>0&&todos.every(c=>c.checked);
+  if(cbH){
+    cbH.checked=todos.length>0&&todos.every(c=>c.checked);
+    cbH.indeterminate=cbs.length>0&&!cbH.checked;
+  }
 }
 function toggleTodosMens(cbH){
   document.querySelectorAll('.cb-mens:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
@@ -733,7 +747,7 @@ function toggleTodosMens(cbH){
 function limparSelMens(){
   document.querySelectorAll('.cb-mens').forEach(c=>{c.checked=false;});
   const cbH=document.getElementById('cbTodosMens');
-  if(cbH)cbH.checked=false;
+  if(cbH){cbH.checked=false;cbH.indeterminate=false;}
   atualizarBulkMens();
 }
 let _idsBaixaMassa=[];
@@ -883,20 +897,38 @@ function confirmarBaixa(id){
   m.lancamentoId=lancId; // vincula para estorno preciso
   salvarDB();closeModal();renderMens();
 }
+function removerLancamentoDaMensalidade(m){
+  const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
+  if(m.lancamentoId){
+    db.lancamentos=db.lancamentos.filter(l=>l.id!==m.lancamentoId);
+  }else{
+    const descricoes=[
+      'Mensalidade '+(t.nome||'')+' - '+mesNome(m.mes)+'/'+m.ano,
+      'Mensalidade '+(t.nome||'')+' — '+mesNome(m.mes)+'/'+m.ano
+    ];
+    const idx=db.lancamentos.findIndex(l=>descricoes.includes(l.descricao)&&l.tipo==='receita'&&l.categoria==='Mensalidade');
+    if(idx>=0)db.lancamentos.splice(idx,1);
+  }
+  m.status='pendente';
+  m.dataPagamento=null;
+  m.lancamentoId=null;
+}
 function estornar(id){
   confirmar('Estornar este pagamento?',()=>{
-    const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
-    const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
-    // remove lançamento vinculado (via lancamentoId salvo no dar baixa, ou fallback por descrição)
-    if(m.lancamentoId){
-      db.lancamentos=db.lancamentos.filter(l=>l.id!==m.lancamentoId);
-    } else {
-      const desc='Mensalidade '+t.nome+' - '+mesNome(m.mes)+'/'+m.ano;
-      const idx=db.lancamentos.findIndex(l=>l.descricao===desc&&l.tipo==='receita'&&l.categoria==='Mensalidade');
-      if(idx>=0)db.lancamentos.splice(idx,1);
-    }
-    m.status='pendente';m.dataPagamento=null;m.lancamentoId=null;
+    const m=db.mensalidades.find(x=>x.id===id);if(!m||m.status!=='pago')return;
+    removerLancamentoDaMensalidade(m);
     salvarDB();renderMens();
+  });
+}
+function estornoMassa(){
+  const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
+  const pagas=ids.map(id=>db.mensalidades.find(m=>m.id===id)).filter(m=>m&&m.status==='pago');
+  if(!pagas.length){alert('Nenhuma mensalidade paga foi selecionada.');return;}
+  confirmar('Estornar '+pagas.length+' pagamento(s) selecionado(s)? Os lançamentos de receita correspondentes também serão removidos.',()=>{
+    pagas.forEach(removerLancamentoDaMensalidade);
+    salvarDB();
+    renderMens();
+    alert(pagas.length+' pagamento(s) estornado(s) com sucesso.');
   });
 }
 
@@ -923,9 +955,81 @@ function renderLanc(){
   lista.sort((a,b)=>b.data.localeCompare(a.data));
   const ent=lista.filter(l=>l.tipo==='receita').reduce((a,l)=>a+l.valor,0);
   const sai=lista.filter(l=>l.tipo==='despesa').reduce((a,l)=>a+l.valor,0);
-  const lin=lista.length===0?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div><div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  const lin=lista.length===0
+    ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
+    :lista.map(l=>{
+      const origem=origemDoLancamento(l.id);
+      const cb=origem
+        ?'<input type="checkbox" class="cb-select cb-lanc" disabled title="Lançamento automático: altere no módulo '+escapeAttr(origem.tipo)+'">'
+        :'<input type="checkbox" class="cb-select cb-lanc" data-id="'+l.id+'" onchange="atualizarBulkLanc()" title="Selecionar lançamento manual">';
+      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>';
+    }).join('');
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div>'+
+    '<div id="bulkBarLanc" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountLanc">0 selecionados</span><button class="btn btn-primary btn-sm" onclick="editarMassaLanc()">&#9999;&#65039; Editar categoria/pagamento</button><button class="btn btn-danger btn-sm" onclick="excluirMassaLanc()">&#128465; Excluir selecionados</button><button class="btn btn-ghost btn-sm" onclick="limparSelLanc()">&#10005; Limpar seleção</button></div>'+
+    '<div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosLanc" onchange="toggleTodosLanc(this)" title="Selecionar lançamentos manuais"></th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
+function atualizarBulkLanc(){
+  const cbs=[...document.querySelectorAll('.cb-lanc:checked')];
+  const bar=document.getElementById('bulkBarLanc');
+  const cnt=document.getElementById('bulkCountLanc');
+  if(cbs.length){bar.style.display='flex';cnt.textContent=cbs.length+' lançamento(s) manual(is) selecionado(s)';}
+  else if(bar){bar.style.display='none';}
+  const todos=[...document.querySelectorAll('.cb-lanc:not(:disabled)')];
+  const cbH=document.getElementById('cbTodosLanc');
+  if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
+}
+function toggleTodosLanc(cbH){
+  document.querySelectorAll('.cb-lanc:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
+  atualizarBulkLanc();
+}
+function limparSelLanc(){
+  document.querySelectorAll('.cb-lanc').forEach(c=>{c.checked=false;});
+  const cbH=document.getElementById('cbTodosLanc');
+  if(cbH){cbH.checked=false;cbH.indeterminate=false;}
+  atualizarBulkLanc();
+}
+let _idsEditMassaLanc=[];
+function editarMassaLanc(){
+  _idsEditMassaLanc=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
+  if(!_idsEditMassaLanc.length){alert('Selecione pelo menos um lançamento manual.');return;}
+  const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
+  const formas=['Dinheiro','PIX','Transferencia','Cartao','Cheque'];
+  openModal(
+    'Editar '+_idsEditMassaLanc.length+' lançamento(s)',
+    '<div class="alert alert-amarelo">Preencha somente o que deseja alterar. Lançamentos automáticos não participam desta ação.</div>'+
+    '<div class="form-group"><label class="form-label">Nova categoria</label><select class="form-control" id="massaLancCat"><option value="">Não alterar</option>'+cats.map(c=>'<option>'+c+'</option>').join('')+'</select></div>'+
+    '<div class="form-group"><label class="form-label">Nova forma de pagamento</label><select class="form-control" id="massaLancForma"><option value="">Não alterar</option>'+formas.map(f=>'<option>'+f+'</option>').join('')+'</select></div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarEditMassaLanc()">&#10003; Aplicar alterações</button>'
+  );
+}
+function confirmarEditMassaLanc(){
+  const categoria=document.getElementById('massaLancCat').value;
+  const forma=document.getElementById('massaLancForma').value;
+  if(!categoria&&!forma){alert('Escolha pelo menos uma alteração.');return;}
+  let alterados=0;
+  _idsEditMassaLanc.forEach(id=>{
+    if(origemDoLancamento(id))return;
+    const l=db.lancamentos.find(x=>x.id===id);
+    if(!l)return;
+    if(categoria)l.categoria=categoria;
+    if(forma)l.formaPagamento=forma;
+    alterados++;
+  });
+  salvarDB();closeModal();renderLanc();
+  alert(alterados+' lançamento(s) atualizado(s).');
+}
+function excluirMassaLanc(){
+  const ids=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
+  if(!ids.length){alert('Selecione pelo menos um lançamento manual.');return;}
+  confirmar('Excluir permanentemente '+ids.length+' lançamento(s) manual(is)?',()=>{
+    const conjunto=new Set(ids);
+    db.lancamentos=db.lancamentos.filter(l=>!conjunto.has(l.id));
+    salvarDB();renderLanc();
+    alert(ids.length+' lançamento(s) excluído(s).');
+  });
+}
+
 function abrirNovoLanc(tipo){
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
   const formas=['Dinheiro','PIX','Transferencia','Cartao','Cheque'];
@@ -1054,8 +1158,10 @@ function renderTrabs(){
     '</div>'+
     '<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountTrabs">0 selecionados</span>'+
-      '<button class="btn btn-primary btn-sm" onclick="editMassaTrabs()">&#9999;&#65039; Editar selecionados</button>'+
-      '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">&#10005; Limpar seleção</button>'+
+      '<button class="btn btn-primary btn-sm" onclick="alterarStatusMassaTrabs(true)">&#10003; Ativar</button>'+
+      '<button class="btn btn-danger btn-sm" onclick="alterarStatusMassaTrabs(false)">&#10005; Inativar</button>'+
+      '<button class="btn btn-outline btn-sm" onclick="editMassaTrabs()">&#9999;&#65039; Editar valor/status</button>'+
+      '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">Limpar seleção</button>'+
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
@@ -1083,6 +1189,21 @@ function limparSelTrabs(){
   if(cbH)cbH.checked=false;
   atualizarBulkTrabs();
 }
+function alterarStatusMassaTrabs(ativo){
+  const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
+  if(!ids.length){alert('Selecione pelo menos um trabalhador.');return;}
+  const acao=ativo?'ativar':'inativar';
+  confirmar((ativo?'Ativar ':'Inativar ')+ids.length+' trabalhador(es) selecionado(s)?',()=>{
+    let alterados=0;
+    ids.forEach(id=>{
+      const t=db.trabalhadores.find(x=>x.id===id);
+      if(t&&t.ativo!==ativo){t.ativo=ativo;alterados++;}
+    });
+    salvarDB();renderTrabs();
+    alert(alterados+' trabalhador(es) '+(ativo?'ativado(s)':'inativado(s)')+'.');
+  });
+}
+
 function editMassaTrabs(){
   const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
@@ -1229,9 +1350,47 @@ function renderCantina(){
   const lista=todas.filter(c=>{const d=new Date(c.data+'T12:00:00');return d.getMonth()+1===mes&&d.getFullYear()===ano;});
   const rec=lista.filter(c=>c.tipo==='entrada').reduce((a,c)=>a+c.valor,0);
   const cus=lista.filter(c=>c.tipo==='custo').reduce((a,c)=>a+c.valor,0);
-  const lin=lista.length===0?'<tr><td colspan="5"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>':lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div><div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+  const lin=lista.length===0
+    ?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
+    :lista.map(c=>'<tr><td><input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento"></td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div>'+
+    '<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>'+
+    '<div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosCantina" onchange="toggleTodosCantina(this)" title="Selecionar todos os movimentos"></th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
+function atualizarBulkCantina(){
+  const cbs=[...document.querySelectorAll('.cb-cantina:checked')];
+  const bar=document.getElementById('bulkBarCantina');
+  const cnt=document.getElementById('bulkCountCantina');
+  if(cbs.length){bar.style.display='flex';cnt.textContent=cbs.length+' movimento(s) selecionado(s)';}
+  else if(bar){bar.style.display='none';}
+  const todos=[...document.querySelectorAll('.cb-cantina')];
+  const cbH=document.getElementById('cbTodosCantina');
+  if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
+}
+function toggleTodosCantina(cbH){
+  document.querySelectorAll('.cb-cantina').forEach(c=>{c.checked=cbH.checked;});
+  atualizarBulkCantina();
+}
+function limparSelCantina(){
+  document.querySelectorAll('.cb-cantina').forEach(c=>{c.checked=false;});
+  const cbH=document.getElementById('cbTodosCantina');
+  if(cbH){cbH.checked=false;cbH.indeterminate=false;}
+  atualizarBulkCantina();
+}
+function excluirMassaCantina(){
+  const ids=[...document.querySelectorAll('.cb-cantina:checked')].map(c=>c.dataset.id);
+  if(!ids.length){alert('Selecione pelo menos um movimento da cantina.');return;}
+  confirmar('Excluir '+ids.length+' movimento(s) da cantina? Os lançamentos financeiros vinculados também serão removidos.',()=>{
+    const conjunto=new Set(ids);
+    const lancamentos=new Set(db.cantina.filter(c=>conjunto.has(c.id)&&c.lancamentoId).map(c=>c.lancamentoId));
+    db.cantina=db.cantina.filter(c=>!conjunto.has(c.id));
+    db.lancamentos=db.lancamentos.filter(l=>!lancamentos.has(l.id));
+    salvarDB();renderCantina();
+    alert(ids.length+' movimento(s) excluído(s).');
+  });
+}
+
 function novaCantina(){
   const agora=new Date();
   const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
@@ -1444,10 +1603,10 @@ Object.assign(window,{
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
-  gerarMes,darBaixa,confirmarBaixa,estornar,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
-  abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,
-  novoTrab,editTrab,salvarTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,editMassaTrabs,confirmarEditMassa,
-  novaCantina,salvarCantina,editarCantina,delCantina,
+  gerarMes,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
+  abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
+  novoTrab,editTrab,salvarTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
+  novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
   confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,
 });
