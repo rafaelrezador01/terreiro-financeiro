@@ -136,8 +136,48 @@ th .cb-select{accent-color:var(--branco);}
 .btn-logout{width:100%;justify-content:center;padding:7px 10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:12px;}
 .btn-logout:hover{background:rgba(255,255,255,.18);}
 
+
+/* Relatório mensal personalizável */
+.report-config{margin-bottom:24px;}
+.report-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;}
+.report-option{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--branco);cursor:pointer;transition:border-color .2s,background .2s;}
+.report-option:hover{border-color:var(--verde-claro);background:var(--verde-bg);}
+.report-option input{margin-top:2px;width:17px;height:17px;accent-color:var(--verde);flex:0 0 auto;}
+.report-option-title{display:block;font-size:13px;font-weight:600;color:var(--texto);}
+.report-option-desc{display:block;font-size:11px;color:var(--texto3);margin-top:2px;line-height:1.35;}
+.report-config-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.report-sheet{background:#fff;border:1px solid var(--borda);border-radius:var(--radius);padding:30px;box-shadow:var(--sombra);}
+.report-header{text-align:center;padding-bottom:20px;border-bottom:2px solid var(--verde);margin-bottom:24px;}
+.report-brand{font-family:'Playfair Display',serif;font-size:22px;font-weight:600;color:var(--verde);}
+.report-title{font-family:'Playfair Display',serif;font-size:20px;font-weight:500;margin-top:8px;}
+.report-period{font-size:14px;color:var(--texto2);margin-top:4px;}
+.report-generated{font-size:11px;color:var(--texto3);margin-top:8px;}
+.report-section{margin-top:24px;break-inside:avoid;page-break-inside:avoid;}
+.report-section:first-of-type{margin-top:0;}
+.report-section-title{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:var(--verde);margin-bottom:12px;padding-bottom:7px;border-bottom:1px solid var(--borda);}
+.report-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+.report-metric{padding:13px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--creme);}
+.report-metric-label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--texto3);margin-bottom:5px;}
+.report-metric-value{font-size:18px;font-weight:600;line-height:1.2;}
+.report-summary-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;}
+.report-summary-box{padding:12px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--creme);}
+.report-summary-label{font-size:11px;color:var(--texto3);text-transform:uppercase;letter-spacing:.3px;}
+.report-summary-value{font-size:17px;font-weight:600;margin-top:4px;}
+.report-empty{padding:16px;border:1px dashed var(--borda);border-radius:var(--radius-sm);color:var(--texto3);font-size:13px;text-align:center;}
+.report-notes{white-space:normal;line-height:1.6;font-size:13px;color:var(--texto2);padding:14px;background:var(--creme);border-radius:var(--radius-sm);}
+.report-hidden{display:none!important;}
+.report-table tfoot td{font-weight:600;background:var(--creme);}
+
+@media(max-width:900px){
+  .report-options{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .report-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+
 @media(max-width:768px){
   .auth-card{padding:24px 20px;}
+  .report-options{grid-template-columns:1fr;}
+  .report-sheet{padding:16px;}
+  .report-metrics,.report-summary-row{grid-template-columns:1fr 1fr;}
   .auth-logo{font-size:24px;}
   .sidebar{transform:translateX(-100%);}
   .sidebar.open{transform:translateX(0);}
@@ -175,6 +215,7 @@ th .cb-select{accent-color:var(--branco);}
 @media(max-width:480px){
   .grid-4,.grid-3,.grid-2{grid-template-columns:1fr;}
   .content{padding:10px;}
+  .report-metrics,.report-summary-row{grid-template-columns:1fr;}
   .topbar{padding:8px 10px;}
   .topbar-title{font-size:15px;}
   /* As tabelas permanecem completas e podem ser roladas horizontalmente. */
@@ -185,7 +226,20 @@ th .cb-select{accent-color:var(--branco);}
   .alert{font-size:12px;padding:10px 12px;}
   #filtroGlobal select{font-size:11px;padding:5px 6px;}
 }
-@media print{.sidebar,.topbar,.btn,.hamburger,#filtroGlobal{display:none!important;}.main{margin-left:0;}}
+@media print{
+  @page{size:A4 portrait;margin:12mm;}
+  .sidebar,.topbar,.btn,.hamburger,#filtroGlobal,.report-config,.screen-only{display:none!important;}
+  .main{margin-left:0!important;}
+  .content{padding:0!important;}
+  body{background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .report-sheet{border:none!important;border-radius:0!important;box-shadow:none!important;padding:0!important;}
+  .report-metrics{grid-template-columns:repeat(5,1fr)!important;}
+  .report-summary-row{grid-template-columns:repeat(3,1fr)!important;}
+  .report-section{break-inside:auto;page-break-inside:auto;}
+  .report-section-title,.report-metric,.report-summary-box,tr{break-inside:avoid;page-break-inside:avoid;}
+  table{font-size:11px;}
+  th,td{padding:7px 8px;}
+}
 </style>
 </head>
 <body>
@@ -1823,29 +1877,215 @@ function delRifa(id){confirmar('Excluir esta rifa/evento?',()=>{
 });}
 
 // RELATORIOS
-function pgRelatorios(){
-  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-outline\" onclick=\"window.print()\">&#128438; Imprimir</button></div>';
-  const ano=filtroAno;
-  let saldoAcum=calcularSaldoInicial(1,ano); // saldo inicial de janeiro do ano selecionado
-  const resumos=Array.from({length:12},(_,i)=>{
-    const m=i+1;
-    const{ent,sai}=totaisMes(m,ano);
-    const res=ent-sai;
-    const saldoInicial=saldoAcum;
-    saldoAcum+=res;
-    const mm=db.mensalidades.filter(x=>x.mes===m&&x.ano===ano&&x.status!=='isento');
-    return{m,e:ent,s:sai,res,saldoInicial,saldoFinal:saldoAcum,pg:mm.filter(x=>x.status==='pago').length,tot:mm.length};
+const RELATORIO_SECOES_PADRAO={
+  lancamentos:true,
+  categorias:true,
+  mensalidades:true,
+  inadimplencias:true,
+  cantina:true,
+  rifas:true,
+  observacoes:false
+};
+let relatorioSecoes={...RELATORIO_SECOES_PADRAO};
+let relatorioTitulo='Balanço Financeiro Mensal';
+let relatorioObservacoes='';
+let relatorioPeriodoEdicao='';
+
+function carregarPreferenciasRelatorio(){
+  try{
+    const salvo=JSON.parse(localStorage.getItem('axe_relatorio_preferencias')||'null');
+    if(salvo&&typeof salvo==='object'){
+      relatorioSecoes={...RELATORIO_SECOES_PADRAO,...(salvo.secoes||{})};
+      if(typeof salvo.titulo==='string'&&salvo.titulo.trim())relatorioTitulo=salvo.titulo;
+    }
+  }catch(erro){
+    console.warn('Não foi possível carregar as preferências do relatório:',erro);
+  }
+}
+function salvarPreferenciasRelatorio(){
+  try{
+    localStorage.setItem('axe_relatorio_preferencias',JSON.stringify({
+      secoes:relatorioSecoes,
+      titulo:relatorioTitulo
+    }));
+  }catch(erro){
+    console.warn('Não foi possível salvar as preferências do relatório:',erro);
+  }
+}
+function lerConfiguracaoRelatorio(){
+  Object.keys(RELATORIO_SECOES_PADRAO).forEach(chave=>{
+    const campo=document.getElementById('relSec_'+chave);
+    if(campo)relatorioSecoes[chave]=campo.checked;
   });
+  const titulo=document.getElementById('relTitulo');
+  const obs=document.getElementById('relObservacoes');
+  if(titulo)relatorioTitulo=titulo.value.trim()||'Balanço Financeiro Mensal';
+  if(obs)relatorioObservacoes=obs.value.trim();
+  salvarPreferenciasRelatorio();
+}
+function atualizarRelatorioPersonalizado(){
+  lerConfiguracaoRelatorio();
+  renderPreviaRelatorio();
+}
+function selecionarComplementosRelatorio(marcar){
+  Object.keys(RELATORIO_SECOES_PADRAO).forEach(chave=>{
+    const campo=document.getElementById('relSec_'+chave);
+    if(campo)campo.checked=marcar;
+  });
+  atualizarRelatorioPersonalizado();
+}
+function imprimirRelatorioMensal(){
+  atualizarRelatorioPersonalizado();
+  window.print();
+}
+function periodoAteSelecionado(m){
+  return periodoParaNum(m.mes,m.ano)<=periodoParaNum(filtroMes,filtroAno);
+}
+function reportOption(chave,titulo,descricao){
+  const checked=relatorioSecoes[chave]?'checked':'';
+  return '<label class="report-option" for="relSec_'+chave+'">'+
+    '<input type="checkbox" id="relSec_'+chave+'" '+checked+' onchange="atualizarRelatorioPersonalizado()">'+
+    '<span><span class="report-option-title">'+escapeHTML(titulo)+'</span><span class="report-option-desc">'+escapeHTML(descricao)+'</span></span>'+
+  '</label>';
+}
+function montarSecaoLancamentosRelatorio(mes,ano){
+  const lista=db.lancamentos.filter(l=>{
+    const d=new Date(l.data+'T12:00:00');
+    return d.getMonth()+1===mes&&d.getFullYear()===ano;
+  }).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!lista.length)return '<div class="report-empty">Nenhum lançamento registrado neste período.</div>';
+  const linhas=lista.map(l=>'<tr><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao||'-')+'</td><td>'+escapeHTML(l.categoria||'-')+'</td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td></tr>').join('');
+  return '<div class="table-wrap"><table class="report-table"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+function montarSecaoCategoriasRelatorio(mes,ano){
   const porCat={};
-  db.lancamentos.forEach(l=>{const d=new Date(l.data+'T12:00:00');if(d.getFullYear()===ano){if(!porCat[l.categoria])porCat[l.categoria]={receita:0,despesa:0};porCat[l.categoria][l.tipo]+=l.valor;}});
-  const ina={};
-  db.mensalidades.filter(m=>m.status==='pendente').forEach(m=>{const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{nome:'?'};if(!ina[t.nome])ina[t.nome]=[];ina[t.nome].push(mesNome(m.mes)+'/'+m.ano);});
-  const totalE=resumos.reduce((a,r)=>a+r.e,0);
-  const totalS=resumos.reduce((a,r)=>a+r.s,0);
-  const linR=resumos.map(r=>'<tr><td><strong>'+mesNome(r.m)+'</strong></td><td class="valor-positivo">'+fmt(r.e)+'</td><td class="valor-negativo">'+fmt(r.s)+'</td><td class="'+(r.res>=0?'valor-positivo':'valor-negativo')+'">'+fmt(r.res)+'</td><td class="'+(r.saldoFinal>=0?'valor-positivo':'valor-negativo')+'"><strong>'+fmt(r.saldoFinal)+'</strong></td><td>'+r.pg+'/'+r.tot+'</td></tr>').join('');
-  const linC=Object.entries(porCat).map(([c,v])=>'<tr><td>'+escapeHTML(c)+'</td><td class="valor-positivo">'+fmt(v.receita)+'</td><td class="valor-negativo">'+fmt(v.despesa)+'</td><td class="'+(v.receita-v.despesa>=0?'valor-positivo':'valor-negativo')+'">'+fmt(v.receita-v.despesa)+'</td></tr>').join('')||'<tr><td colspan="4"><span class="text-muted">Sem dados</span></td></tr>';
-  const linI=Object.keys(ina).length===0?'<tr><td colspan="2"><span class="text-muted">Nenhuma inadimplencia</span></td></tr>':Object.entries(ina).map(([n,ms])=>'<tr><td><strong>'+escapeHTML(n)+'</strong></td><td>'+ms.join(', ')+'</td></tr>').join('');
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="alert alert-verde mb-6">&#128202; Relatório referente ao ano de '+ano+'</div><div class="card mb-6"><div class="section-header"><div class="section-title">Fluxo de caixa - '+ano+'</div></div><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th><th>Saldo acumulado</th><th>Mensalidades</th></tr></thead><tbody>'+linR+'</tbody><tfoot><tr style="font-weight:600;background:var(--creme);"><td>TOTAL ANUAL</td><td class="valor-positivo">'+fmt(totalE)+'</td><td class="valor-negativo">'+fmt(totalS)+'</td><td class="'+(totalE-totalS>=0?'valor-positivo':'valor-negativo')+'">'+fmt(totalE-totalS)+'</td><td class="'+(saldoAcum>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoAcum)+'</td><td>-</td></tr></tfoot></table></div></div><div class="grid-2"><div class="card"><div class="section-header"><div class="section-title">Por categoria</div></div><div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linC+'</tbody></table></div></div><div class="card"><div class="section-header"><div class="section-title">Inadimplências em aberto</div></div><div class="table-wrap"><table><thead><tr><th>Trabalhador</th><th>Meses em aberto</th></tr></thead><tbody>'+linI+'</tbody></table></div></div></div></div>';
+  db.lancamentos.forEach(l=>{
+    const d=new Date(l.data+'T12:00:00');
+    if(d.getMonth()+1!==mes||d.getFullYear()!==ano)return;
+    const cat=l.categoria||'Sem categoria';
+    if(!porCat[cat])porCat[cat]={receita:0,despesa:0};
+    porCat[cat][l.tipo]=(porCat[cat][l.tipo]||0)+(Number(l.valor)||0);
+  });
+  const itens=Object.entries(porCat).sort((a,b)=>(b[1].receita+b[1].despesa)-(a[1].receita+a[1].despesa));
+  if(!itens.length)return '<div class="report-empty">Nenhuma categoria com movimentação neste período.</div>';
+  const linhas=itens.map(([cat,v])=>'<tr><td>'+escapeHTML(cat)+'</td><td class="valor-positivo">'+fmt(v.receita)+'</td><td class="valor-negativo">'+fmt(v.despesa)+'</td><td class="'+(v.receita-v.despesa>=0?'valor-positivo':'valor-negativo')+'">'+fmt(v.receita-v.despesa)+'</td></tr>').join('');
+  return '<div class="table-wrap"><table class="report-table"><thead><tr><th>Categoria</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+function montarSecaoMensalidadesRelatorio(mes,ano){
+  const lista=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano&&m.status!=='isento');
+  const pagas=lista.filter(m=>m.status==='pago');
+  const pendentes=lista.filter(m=>m.status==='pendente');
+  const recebidas=pagas.reduce((a,m)=>a+(Number(m.valor)||0),0);
+  const aberto=pendentes.reduce((a,m)=>a+(Number(m.valor)||0),0);
+  const trabalhadoresIsentos=trabsValidosParaPeriodo(mes,ano).filter(t=>trabIsentoNoPeriodo(t,mes,ano));
+  let resumo='<div class="report-summary-row">'+
+    '<div class="report-summary-box"><div class="report-summary-label">Recebido</div><div class="report-summary-value valor-positivo">'+fmt(recebidas)+'</div><div class="text-muted">'+pagas.length+' pagamento(s)</div></div>'+
+    '<div class="report-summary-box"><div class="report-summary-label">Em aberto</div><div class="report-summary-value valor-negativo">'+fmt(aberto)+'</div><div class="text-muted">'+pendentes.length+' pendência(s)</div></div>'+
+    '<div class="report-summary-box"><div class="report-summary-label">Isentos no período</div><div class="report-summary-value">'+trabalhadoresIsentos.length+'</div><div class="text-muted">fora da cobrança</div></div>'+
+  '</div>';
+  if(!lista.length&&trabalhadoresIsentos.length===0)return resumo+'<div class="report-empty">Nenhuma mensalidade foi gerada neste período.</div>';
+  const linhas=lista.sort((a,b)=>{
+    if(a.status!==b.status)return a.status==='pendente'?-1:1;
+    const ta=db.trabalhadores.find(t=>t.id===a.trabalhadorId)||{nome:''};
+    const tb=db.trabalhadores.find(t=>t.id===b.trabalhadorId)||{nome:''};
+    return ta.nome.localeCompare(tb.nome);
+  }).map(m=>{
+    const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{nome:'Trabalhador não encontrado'};
+    return '<tr><td>'+escapeHTML(t.nome)+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td></tr>';
+  }).join('');
+  const tabela=linhas?'<div class="table-wrap"><table class="report-table"><thead><tr><th>Trabalhador</th><th>Valor</th><th>Status</th><th>Pagamento</th></tr></thead><tbody>'+linhas+'</tbody></table></div>':'<div class="report-empty">Não há cobranças geradas; apenas trabalhadores isentos no período.</div>';
+  return resumo+tabela;
+}
+function montarSecaoInadimplenciaRelatorio(){
+  const pendentes=db.mensalidades.filter(m=>m.status==='pendente'&&periodoAteSelecionado(m));
+  const agrupado={};
+  pendentes.forEach(m=>{
+    const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{nome:'Trabalhador não encontrado'};
+    if(!agrupado[t.id||t.nome])agrupado[t.id||t.nome]={nome:t.nome,meses:[],valor:0};
+    agrupado[t.id||t.nome].meses.push({mes:m.mes,ano:m.ano});
+    agrupado[t.id||t.nome].valor+=Number(m.valor)||0;
+  });
+  const itens=Object.values(agrupado).sort((a,b)=>b.valor-a.valor);
+  if(!itens.length)return '<div class="report-empty">Nenhuma inadimplência em aberto até este período.</div>';
+  const linhas=itens.map(item=>{
+    item.meses.sort((a,b)=>periodoParaNum(a.mes,a.ano)-periodoParaNum(b.mes,b.ano));
+    return '<tr><td><strong>'+escapeHTML(item.nome)+'</strong></td><td>'+item.meses.map(p=>mesNome(p.mes)+'/'+p.ano).join(', ')+'</td><td class="valor-negativo">'+fmt(item.valor)+'</td></tr>';
+  }).join('');
+  return '<div class="table-wrap"><table class="report-table"><thead><tr><th>Trabalhador</th><th>Meses em aberto</th><th>Total</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+function montarSecaoCantinaRelatorio(mes,ano){
+  const lista=db.cantina.filter(c=>{
+    const d=new Date(c.data+'T12:00:00');
+    return d.getMonth()+1===mes&&d.getFullYear()===ano;
+  }).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!lista.length)return '<div class="report-empty">Nenhum movimento de cantina neste período.</div>';
+  const receitas=lista.filter(c=>c.tipo==='receita').reduce((a,c)=>a+(Number(c.valor)||0),0);
+  const despesas=lista.filter(c=>c.tipo==='despesa').reduce((a,c)=>a+(Number(c.valor)||0),0);
+  const resumo='<div class="report-summary-row"><div class="report-summary-box"><div class="report-summary-label">Receitas</div><div class="report-summary-value valor-positivo">'+fmt(receitas)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Despesas</div><div class="report-summary-value valor-negativo">'+fmt(despesas)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Resultado</div><div class="report-summary-value '+(receitas-despesas>=0?'valor-positivo':'valor-negativo')+'">'+fmt(receitas-despesas)+'</div></div></div>';
+  const linhas=lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao||'-')+'</td><td>'+(c.tipo==='receita'?'Receita':'Despesa')+'</td><td class="'+(c.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='receita'?'+':'-')+fmt(c.valor)+'</td></tr>').join('');
+  return resumo+'<div class="table-wrap"><table class="report-table"><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+function montarSecaoRifasRelatorio(mes,ano){
+  const lista=db.rifas.filter(r=>{
+    const d=new Date(r.data+'T12:00:00');
+    return d.getMonth()+1===mes&&d.getFullYear()===ano;
+  }).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!lista.length)return '<div class="report-empty">Nenhuma rifa ou evento neste período.</div>';
+  const arrecadado=lista.reduce((a,r)=>a+(Number(r.arrecadado)||0),0);
+  const custo=lista.reduce((a,r)=>a+(Number(r.custo)||0),0);
+  const resumo='<div class="report-summary-row"><div class="report-summary-box"><div class="report-summary-label">Arrecadado</div><div class="report-summary-value valor-positivo">'+fmt(arrecadado)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Custos</div><div class="report-summary-value valor-negativo">'+fmt(custo)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Resultado</div><div class="report-summary-value '+(arrecadado-custo>=0?'valor-positivo':'valor-negativo')+'">'+fmt(arrecadado-custo)+'</div></div></div>';
+  const linhas=lista.map(r=>'<tr><td>'+fmtData(r.data)+'</td><td>'+escapeHTML(r.nome||'-')+'</td><td>'+escapeHTML(r.tipo||'-')+'</td><td class="valor-positivo">'+fmt(r.arrecadado)+'</td><td class="valor-negativo">'+fmt(r.custo)+'</td><td class="'+((Number(r.arrecadado)||0)-(Number(r.custo)||0)>=0?'valor-positivo':'valor-negativo')+'">'+fmt((Number(r.arrecadado)||0)-(Number(r.custo)||0))+'</td></tr>').join('');
+  return resumo+'<div class="table-wrap"><table class="report-table"><thead><tr><th>Data</th><th>Nome</th><th>Tipo</th><th>Arrecadado</th><th>Custo</th><th>Resultado</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+function renderPreviaRelatorio(){
+  const alvo=document.getElementById('relatorioImpressao');
+  if(!alvo)return;
+  const mes=filtroMes,ano=filtroAno;
+  const{saldoInicial,ent,sai,resultado,saldoFinal}=fluxoMes(mes,ano);
+  const gerado=new Intl.DateTimeFormat('pt-BR',{dateStyle:'long',timeStyle:'short'}).format(new Date());
+  const secoes=[];
+  // O balanço mensal é obrigatório e não pode ser removido.
+  secoes.push('<section class="report-section"><h2 class="report-section-title">Balanço do mês</h2><div class="report-metrics">'+
+    '<div class="report-metric"><div class="report-metric-label">Saldo inicial</div><div class="report-metric-value '+(saldoInicial>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoInicial)+'</div></div>'+
+    '<div class="report-metric"><div class="report-metric-label">Entradas</div><div class="report-metric-value valor-positivo">'+fmt(ent)+'</div></div>'+
+    '<div class="report-metric"><div class="report-metric-label">Saídas</div><div class="report-metric-value valor-negativo">'+fmt(sai)+'</div></div>'+
+    '<div class="report-metric"><div class="report-metric-label">Resultado do mês</div><div class="report-metric-value '+(resultado>=0?'valor-positivo':'valor-negativo')+'">'+fmt(resultado)+'</div></div>'+
+    '<div class="report-metric"><div class="report-metric-label">Saldo final</div><div class="report-metric-value '+(saldoFinal>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldoFinal)+'</div></div>'+
+  '</div></section>');
+  if(relatorioSecoes.lancamentos)secoes.push('<section class="report-section"><h2 class="report-section-title">Lançamentos detalhados</h2>'+montarSecaoLancamentosRelatorio(mes,ano)+'</section>');
+  if(relatorioSecoes.categorias)secoes.push('<section class="report-section"><h2 class="report-section-title">Movimentação por categoria</h2>'+montarSecaoCategoriasRelatorio(mes,ano)+'</section>');
+  if(relatorioSecoes.mensalidades)secoes.push('<section class="report-section"><h2 class="report-section-title">Mensalidades do período</h2>'+montarSecaoMensalidadesRelatorio(mes,ano)+'</section>');
+  if(relatorioSecoes.inadimplencias)secoes.push('<section class="report-section"><h2 class="report-section-title">Inadimplências acumuladas</h2>'+montarSecaoInadimplenciaRelatorio()+'</section>');
+  if(relatorioSecoes.cantina)secoes.push('<section class="report-section"><h2 class="report-section-title">Cantina</h2>'+montarSecaoCantinaRelatorio(mes,ano)+'</section>');
+  if(relatorioSecoes.rifas)secoes.push('<section class="report-section"><h2 class="report-section-title">Rifas e eventos</h2>'+montarSecaoRifasRelatorio(mes,ano)+'</section>');
+  if(relatorioSecoes.observacoes&&relatorioObservacoes)secoes.push('<section class="report-section"><h2 class="report-section-title">Observações</h2><div class="report-notes">'+escapeHTML(relatorioObservacoes).replace(/\n/g,'<br>')+'</div></section>');
+  alvo.innerHTML='<header class="report-header"><div class="report-brand">&#9789; Financeiro | TULUCA</div><h1 class="report-title">'+escapeHTML(relatorioTitulo)+'</h1><div class="report-period">'+mesNome(mes)+' de '+ano+'</div><div class="report-generated">Gerado em '+escapeHTML(gerado)+'</div></header>'+secoes.join('');
+}
+function pgRelatorios(){
+  const periodoAtual=filtroAno+'-'+String(filtroMes).padStart(2,'0');
+  if(relatorioPeriodoEdicao&&relatorioPeriodoEdicao!==periodoAtual)relatorioObservacoes='';
+  relatorioPeriodoEdicao=periodoAtual;
+  carregarPreferenciasRelatorio();
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);"><button class="btn btn-outline" onclick="imprimirRelatorioMensal()">&#128438; Imprimir / PDF</button></div>';
+  const opcoes=
+    reportOption('lancamentos','Lançamentos detalhados','Lista completa das entradas e saídas do mês.')+
+    reportOption('categorias','Movimentação por categoria','Receitas, despesas e resultado agrupados.')+
+    reportOption('mensalidades','Mensalidades do período','Recebidas, em aberto, isentos e lista individual.')+
+    reportOption('inadimplencias','Inadimplências acumuladas','Pendências existentes até o período selecionado.')+
+    reportOption('cantina','Cantina','Movimentos e resultado da cantina no mês.')+
+    reportOption('rifas','Rifas e eventos','Arrecadação, custos e resultado dos eventos.')+
+    reportOption('observacoes','Observações finais','Texto livre para contextualizar o relatório.');
+  document.getElementById('pageContent').innerHTML='<div class="page">'+
+    '<div class="card report-config">'+
+      '<div class="section-header"><div><div class="section-title">Personalizar relatório</div><div class="text-muted" style="margin-top:4px;">O balanço do mês é obrigatório. Marque somente as informações complementares que deseja apresentar.</div></div></div>'+
+      '<div class="form-row"><div class="form-group"><label class="form-label" for="relTitulo">Título do relatório</label><input type="text" class="form-control" id="relTitulo" value="'+escapeAttr(relatorioTitulo)+'" oninput="atualizarRelatorioPersonalizado()"></div><div class="form-group"><label class="form-label">Período selecionado</label><div class="form-control" style="background:var(--creme);">'+mesNome(filtroMes)+' de '+filtroAno+'</div></div></div>'+
+      '<div class="report-options">'+opcoes+'</div>'+
+      '<div class="form-group" style="margin-top:16px;"><label class="form-label" for="relObservacoes">Observações finais</label><textarea class="form-control" id="relObservacoes" rows="4" placeholder="Ex: principais despesas do mês, decisões tomadas, informações para os trabalhadores..." oninput="atualizarRelatorioPersonalizado()">'+escapeHTML(relatorioObservacoes)+'</textarea><div class="text-muted" style="margin-top:5px;">O texto só aparecerá no relatório quando a opção “Observações finais” estiver marcada.</div></div>'+
+      '<div class="report-config-actions"><button class="btn btn-sm btn-outline" onclick="selecionarComplementosRelatorio(true)">&#10003; Marcar todos</button><button class="btn btn-sm btn-ghost" onclick="selecionarComplementosRelatorio(false)">&#10005; Tirar complementos</button><button class="btn btn-sm btn-primary" onclick="atualizarRelatorioPersonalizado()">&#8635; Atualizar prévia</button><button class="btn btn-sm btn-outline" onclick="imprimirRelatorioMensal()">&#128438; Imprimir / salvar PDF</button></div>'+
+    '</div>'+
+    '<div id="relatorioImpressao" class="report-sheet" aria-live="polite"></div>'+
+  '</div>';
+  renderPreviaRelatorio();
 }
 
 // DADOS DE EXEMPLO
@@ -1884,7 +2124,7 @@ Object.assign(window,{
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabIsentoNoPeriodo,trabElegivelParaCobranca,trabsValidosParaPeriodo,trabsElegiveisParaCobranca,migrarTrabalhadores,
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
-  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,
+  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,abrirExcluirMesMensalidades,excluirMesMensalidades,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
