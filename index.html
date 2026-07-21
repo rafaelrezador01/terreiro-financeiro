@@ -401,12 +401,15 @@ function exigirSupremo(acao='realizar esta ação'){
 function perfilLabel(){return isSupremo()?'Supremo':'Usuário';}
 async function carregarPerfilAcesso(user){
   const snap=await get(ref(firebaseDB,'usuarios_acessos/'+user.uid));
-  const dados=snap.val();
+  const dados=snap.val()||{};
+  // Correção: normaliza o perfil para evitar falhas por espaços ou letras maiúsculas.
+  const perfilNormalizado=String(dados.perfil||'usuario').trim().toLowerCase();
   perfilAcessoAtual={
-    perfil:dados?.perfil==='supremo'?'supremo':'usuario',
-    ativo:dados?.ativo!==false,
-    nome:dados?.nome||user.displayName||'',
-    email:dados?.email||user.email||''
+    perfil:perfilNormalizado==='supremo'?'supremo':'usuario',
+    ativo:dados.ativo!==false,
+    nome:dados.nome||user.displayName||'',
+    email:dados.email||user.email||'',
+    uid:user.uid
   };
   if(!perfilAcessoAtual.ativo)throw new Error('ACESSO_DESATIVADO');
   return perfilAcessoAtual;
@@ -618,11 +621,8 @@ function carregarDB(){
     _pararEscutaDB();
     _pararEscutaDB=null;
   }
-  if(_pararEscutaAuditoria){
-    _pararEscutaAuditoria();
-    _pararEscutaAuditoria=null;
-  }
-  perfilAcessoAtual={perfil:'usuario',ativo:true};
+  // Correção crítica: não redefine o perfil já validado no login.
+  // O perfil Supremo deve permanecer ativo durante todo o carregamento do banco.
   _auditoriaLegada=[];
   _eventosAuditoriaPendentes=[];
   _iniciado=false;
@@ -820,10 +820,15 @@ function encerrarAplicativoLocal(){
     _pararEscutaDB();
     _pararEscutaDB=null;
   }
+  if(_pararEscutaAuditoria){
+    _pararEscutaAuditoria();
+    _pararEscutaAuditoria=null;
+  }
   _iniciado=false;
   _appInicializado=false;
   _appInicializando=false;
   _salvamentosPendentes=0;
+  perfilAcessoAtual={perfil:'usuario',ativo:true};
   db=normalizarDB(null,[]);
   paginaAtual='dashboard';
   closeSidebar();
@@ -2409,6 +2414,8 @@ async function init(){
   document.getElementById('pageContent').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--texto3);"><div style="font-size:32px;">&#9789;</div><div style="font-size:15px;">Conectando ao banco de dados...</div></div>';
   try{
     await carregarDB();
+    // A auditoria é carregada somente após o banco, preservando o perfil já validado.
+    await carregarAuditoriaPorPerfil();
     await migrarAuditoriaLegadaSeNecessario();
     // Dados de exemplo não são inseridos automaticamente em produção.
     migrarTrabalhadores();
@@ -2438,7 +2445,6 @@ onAuthStateChanged(firebaseAuth,async user=>{
     try{
       mostrarMensagemAuth('');
       await carregarPerfilAcesso(user);
-      await carregarAuditoriaPorPerfil();
       mostrarAplicativo(user);
       await init();
     }catch(erro){
