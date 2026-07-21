@@ -140,7 +140,9 @@ th .cb-select{accent-color:var(--branco);}
 .auth-message.success{display:block;background:var(--verde-bg);color:var(--verde);border:1px solid rgba(45,106,79,.25);}
 .auth-security{text-align:center;color:var(--texto3);font-size:11px;margin-top:22px;}
 .sidebar-user{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12);}
-.sidebar-user-email{font-size:11px;color:rgba(255,255,255,.72);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:9px;}
+.sidebar-user-email{font-size:11px;color:rgba(255,255,255,.72);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px;}
+.sidebar-user-role{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:10px;font-weight:600;letter-spacing:.3px;margin-bottom:9px;}
+.access-note{padding:10px 12px;border-radius:var(--radius-sm);background:var(--azul-bg);color:var(--azul);font-size:12px;margin-bottom:14px;border:1px solid rgba(27,79,114,.18);}
 .btn-logout{width:100%;justify-content:center;padding:7px 10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:12px;}
 .btn-logout:hover{background:rgba(255,255,255,.18);}
 
@@ -295,9 +297,10 @@ th .cb-select{accent-color:var(--branco);}
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.1 - Acesso protegido</div>
+    <div style="margin-top:4px;">v1.2 - Perfis e auditoria</div>
     <div class="sidebar-user">
       <div class="sidebar-user-email" id="usuarioLogadoEmail" title="Usuário conectado"></div>
+      <div class="sidebar-user-role" id="usuarioLogadoPerfil">Usuário</div>
       <button type="button" class="btn btn-logout" onclick="sair()">Sair do sistema</button>
     </div>
   </div>
@@ -330,7 +333,7 @@ th .cb-select{accent-color:var(--branco);}
 <script type="module">
 // Firebase SDK
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import{getDatabase,ref,set,onValue}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import{getDatabase,ref,onValue,get,update}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 import{getAuth,setPersistence,browserLocalPersistence,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 const firebaseConfig={
@@ -347,6 +350,8 @@ const firebaseApp=initializeApp(firebaseConfig);
 const firebaseAuth=getAuth(firebaseApp);
 const firebaseDB=getDatabase(firebaseApp);
 const dbRef=ref(firebaseDB,'axe_financeiro');
+const raizRef=ref(firebaseDB);
+const auditoriaRef=ref(firebaseDB,'auditoria_financeiro');
 
 let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[],auditoria:[]};
 let paginaAtual='dashboard';
@@ -363,12 +368,16 @@ let _iniciado=false;
 let _appInicializado=false;
 let _appInicializando=false;
 let _pararEscutaDB=null;
+let _pararEscutaAuditoria=null;
+let perfilAcessoAtual={perfil:'usuario',ativo:true};
+let _auditoriaLegada=[];
+let _eventosAuditoriaPendentes=[];
 
 let _salvamentosPendentes=0;
 let _focoAntesModal=null;
 let _baseAuditoria=null;
 
-function normalizarDB(data){
+function normalizarDB(data,auditoriaAtual=[]){
   const origem=data&&typeof data==='object'?data:{};
   return{
     trabalhadores:Array.isArray(origem.trabalhadores)?origem.trabalhadores:[],
@@ -376,8 +385,75 @@ function normalizarDB(data){
     lancamentos:Array.isArray(origem.lancamentos)?origem.lancamentos:[],
     rifas:Array.isArray(origem.rifas)?origem.rifas:[],
     cantina:Array.isArray(origem.cantina)?origem.cantina:[],
-    auditoria:Array.isArray(origem.auditoria)?origem.auditoria:[]
+    auditoria:Array.isArray(auditoriaAtual)?auditoriaAtual:[]
   };
+}
+
+function isSupremo(){
+  return perfilAcessoAtual?.ativo!==false&&perfilAcessoAtual?.perfil==='supremo';
+}
+function somenteSupremo(html){return isSupremo()?html:'';}
+function exigirSupremo(acao='realizar esta ação'){
+  if(isSupremo())return true;
+  alert('Acesso restrito. Somente o perfil Supremo pode '+acao+'.');
+  return false;
+}
+function perfilLabel(){return isSupremo()?'Supremo':'Usuário';}
+async function carregarPerfilAcesso(user){
+  const snap=await get(ref(firebaseDB,'usuarios_acessos/'+user.uid));
+  const dados=snap.val();
+  perfilAcessoAtual={
+    perfil:dados?.perfil==='supremo'?'supremo':'usuario',
+    ativo:dados?.ativo!==false,
+    nome:dados?.nome||user.displayName||'',
+    email:dados?.email||user.email||''
+  };
+  if(!perfilAcessoAtual.ativo)throw new Error('ACESSO_DESATIVADO');
+  return perfilAcessoAtual;
+}
+function aplicarPerfilNaInterface(){
+  const el=document.getElementById('usuarioLogadoPerfil');
+  if(el){el.textContent=perfilLabel();el.title=isSupremo()?'Acesso administrativo completo':'Acesso operacional';}
+}
+function carregarAuditoriaPorPerfil(){
+  if(_pararEscutaAuditoria){_pararEscutaAuditoria();_pararEscutaAuditoria=null;}
+  if(!isSupremo()){
+    db.auditoria=[];
+    return Promise.resolve();
+  }
+  return new Promise((resolve,reject)=>{
+    let primeira=true;
+    _pararEscutaAuditoria=onValue(auditoriaRef,snapshot=>{
+      const dados=snapshot.val()||{};
+      db.auditoria=Array.isArray(dados)?dados.filter(Boolean):Object.values(dados);
+      if(primeira){primeira=false;resolve();}
+    },erro=>{if(primeira){primeira=false;reject(erro);}else console.error('Falha ao carregar auditoria:',erro);});
+  });
+}
+async function migrarAuditoriaLegadaSeNecessario(){
+  if(!isSupremo())return;
+  const possuiMetaLegada=ENTIDADES_AUDITAVEIS.some(cfg=>(db[cfg.chave]||[]).some(registro=>Object.keys(registro||{}).some(chave=>CAMPOS_META_AUDITORIA.has(chave))));
+  if(!_auditoriaLegada.length&&!possuiMetaLegada)return;
+  const existentes=new Set((db.auditoria||[]).map(e=>String(e.id)));
+  const atualizacoes={
+    'axe_financeiro':{
+      trabalhadores:db.trabalhadores,
+      mensalidades:db.mensalidades.map(registroSemMeta),
+      lancamentos:db.lancamentos.map(registroSemMeta),
+      rifas:db.rifas.map(registroSemMeta),
+      cantina:db.cantina.map(registroSemMeta)
+    }
+  };
+  _auditoriaLegada.forEach(e=>{
+    if(e?.id&&!existentes.has(String(e.id)))atualizacoes['auditoria_financeiro/'+e.id]=e;
+  });
+  await update(raizRef,atualizacoes);
+  db.mensalidades=db.mensalidades.map(registroSemMeta);
+  db.lancamentos=db.lancamentos.map(registroSemMeta);
+  db.rifas=db.rifas.map(registroSemMeta);
+  db.cantina=db.cantina.map(registroSemMeta);
+  _auditoriaLegada=[];
+  atualizarBaseAuditoria();
 }
 
 // ── HISTÓRICO E AUDITORIA ─────────────────────────────────────────────────
@@ -437,8 +513,7 @@ function detalhesAlteracaoAuditoria(antes,depois){
   return alterados.slice(0,8).join(' | ')||'Registro salvo sem mudança identificável.';
 }
 function adicionarEventoAuditoria(entidade,registroId,acao,descricao,usuario,ocorridoEm){
-  if(!Array.isArray(db.auditoria))db.auditoria=[];
-  db.auditoria.push({
+  _eventosAuditoriaPendentes.push({
     id:uid(),entidade,registroId:String(registroId||''),acao,descricao,
     ocorridoEm,usuarioUid:usuario.uid,usuarioEmail:usuario.email,usuarioNome:usuario.nome
   });
@@ -457,11 +532,8 @@ function prepararAuditoriaAntesSalvar(){
       const anterior=mapaAnterior.get(id);
       const atualLimpo=registroSemMeta(registro);
       if(!anterior){
-        registro.criadoEm=ocorridoEm;registro.criadoPorUid=usuario.uid;registro.criadoPorEmail=usuario.email;
-        registro.atualizadoEm=ocorridoEm;registro.atualizadoPorUid=usuario.uid;registro.atualizadoPorEmail=usuario.email;
         adicionarEventoAuditoria(cfg.entidade,id,'Criado',resumoRegistroAuditoria(cfg.entidade,registro),usuario,ocorridoEm);
       }else if(JSON.stringify(anterior)!==JSON.stringify(atualLimpo)){
-        registro.atualizadoEm=ocorridoEm;registro.atualizadoPorUid=usuario.uid;registro.atualizadoPorEmail=usuario.email;
         adicionarEventoAuditoria(cfg.entidade,id,'Editado',resumoRegistroAuditoria(cfg.entidade,registro)+' — '+detalhesAlteracaoAuditoria(anterior,atualLimpo),usuario,ocorridoEm);
       }
     });
@@ -494,6 +566,7 @@ function htmlEventosAuditoria(eventos,mensagemVazia){
   ).join('')+'</div>';
 }
 function abrirHistoricoRegistro(entidade,registroId,titulo){
+  if(!exigirSupremo('consultar o histórico'))return;
   openModal(
     'Histórico — '+(titulo||'Registro'),
     htmlEventosAuditoria(eventosAuditoria(entidade,registroId),'Este registro já existia antes da ativação do histórico. A autoria e a data original não podem ser recuperadas; as próximas alterações serão registradas.'),
@@ -501,6 +574,7 @@ function abrirHistoricoRegistro(entidade,registroId,titulo){
   );
 }
 function abrirHistoricoModulo(entidade,titulo){
+  if(!exigirSupremo('consultar o histórico'))return;
   const eventos=eventosAuditoria(entidade).slice(0,300);
   openModal(
     titulo,
@@ -517,9 +591,19 @@ function salvarDB(){
     return Promise.resolve(false);
   }
   prepararAuditoriaAntesSalvar();
+  const eventos=_eventosAuditoriaPendentes.splice(0);
   _salvamentosPendentes++;
-  const payload=JSON.parse(JSON.stringify(db));
-  return set(dbRef,payload).catch(erro=>{
+  const payload=JSON.parse(JSON.stringify({
+    trabalhadores:db.trabalhadores,
+    mensalidades:db.mensalidades.map(registroSemMeta),
+    lancamentos:db.lancamentos.map(registroSemMeta),
+    rifas:db.rifas.map(registroSemMeta),
+    cantina:db.cantina.map(registroSemMeta)
+  }));
+  const atualizacoes={'axe_financeiro':payload};
+  eventos.forEach(evento=>{atualizacoes['auditoria_financeiro/'+evento.id]=evento;});
+  return update(raizRef,atualizacoes).then(()=>true).catch(erro=>{
+    _eventosAuditoriaPendentes.unshift(...eventos);
     console.error('Falha ao salvar no Firebase:',erro);
     alert('Não foi possível salvar os dados. Verifique a internet e as permissões do Firebase antes de continuar.');
     return false;
@@ -534,10 +618,19 @@ function carregarDB(){
     _pararEscutaDB();
     _pararEscutaDB=null;
   }
+  if(_pararEscutaAuditoria){
+    _pararEscutaAuditoria();
+    _pararEscutaAuditoria=null;
+  }
+  perfilAcessoAtual={perfil:'usuario',ativo:true};
+  _auditoriaLegada=[];
+  _eventosAuditoriaPendentes=[];
   _iniciado=false;
   return new Promise((resolve,reject)=>{
     _pararEscutaDB=onValue(dbRef,(snapshot)=>{
-      db=normalizarDB(snapshot.val());
+      const bruto=snapshot.val();
+      _auditoriaLegada=Array.isArray(bruto?.auditoria)?bruto.auditoria.filter(Boolean):[];
+      db=normalizarDB(bruto,db.auditoria);
       atualizarBaseAuditoria();
       if(!_iniciado){
         _iniciado=true;
@@ -670,6 +763,7 @@ function mostrarAplicativo(user){
   const email=document.getElementById('usuarioLogadoEmail');
   email.textContent=user.email||'Usuário autenticado';
   email.title=user.email||'Usuário autenticado';
+  aplicarPerfilNaInterface();
 }
 
 async function entrarNoSistema(evento){
@@ -730,7 +824,7 @@ function encerrarAplicativoLocal(){
   _appInicializado=false;
   _appInicializando=false;
   _salvamentosPendentes=0;
-  db=normalizarDB(null);
+  db=normalizarDB(null,[]);
   paginaAtual='dashboard';
   closeSidebar();
   closeModal();
@@ -860,8 +954,8 @@ function renderDashboard(){
 function pgMensalidades(){
   document.getElementById('topbarActions').innerHTML=
     '<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+
-      '<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'mensalidade\',\'Histórico de mensalidades\')">&#128337; Histórico geral</button>'+
-      '<button class="btn btn-danger" onclick="abrirExcluirMesMensalidades()">&#128465; Excluir mês</button>'+
+      somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'mensalidade\',\'Histórico de mensalidades\')">&#128337; Histórico geral</button>')+
+      somenteSupremo('<button class="btn btn-danger" onclick="abrirExcluirMesMensalidades()">&#128465; Excluir mês</button>')+
       '<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mês</button>'+
     '</div>';
   renderMens();
@@ -889,7 +983,10 @@ function renderMens(){
         lin+='<tr style="opacity:0.7;"><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" disabled title="Isento neste mês"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td><span class="text-muted">—</span></td><td><span class="badge badge-cinza">Isento</span></td><td>—</td><td><span class="text-muted" style="font-size:12px;">Mês de entrada</span></td></tr>';
       }else{
         const titulo=m.status==='pago'?'Selecionar para estorno em massa':'Selecionar para baixa em massa';
-        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'mensalidade\',\''+m.id+'\',\'Mensalidade de '+escapeAttr(t.nome||'?')+'\')">&#128337;</button>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</div></td></tr>';
+        const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'">':'—';
+        const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'mensalidade\',\''+m.id+'\',\'Mensalidade de '+escapeAttr(t.nome||'?')+'\')">&#128337;</button>');
+        const acao=m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':somenteSupremo('<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>');
+        lin+='<tr><td>'+seletor+'</td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+acao+'</div></td></tr>';
       }
     });
   }
@@ -906,7 +1003,7 @@ function renderMens(){
       '<div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div>'+
       '<div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div>'+
     '</div>'+isentosPermanentesInfo+isentosInfo+
-    '<div id="bulkBarMens" style="display:none;" class="bulk-bar">'+
+    (isSupremo()?'<div id="bulkBarMens" style="display:none;" class="bulk-bar">': '<div id="bulkBarMens" style="display:none;">')+
       '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
       '<button class="btn btn-primary btn-sm" id="bulkBtnBaixaMens" onclick="baixaMassa()">&#10003; Dar baixa</button>'+
       '<button class="btn btn-danger btn-sm" id="bulkBtnEstornoMens" onclick="estornoMassa()">&#8617; Estornar pagas</button>'+
@@ -914,7 +1011,7 @@ function renderMens(){
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
-      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar mensalidades pagas e pendentes"></th>'+
+      '<th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar mensalidades pagas e pendentes">':'—')+'</th>'+
       '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Ação</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
 }
@@ -942,7 +1039,7 @@ function atualizarBulkMens(){
     cbH.indeterminate=cbs.length>0&&!cbH.checked;
   }
 }
-function toggleTodosMens(cbH){
+function toggleTodosMens(cbH){if(!isSupremo())return;
   document.querySelectorAll('.cb-mens:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkMens();
 }
@@ -953,7 +1050,7 @@ function limparSelMens(){
   atualizarBulkMens();
 }
 let _idsBaixaMassa=[];
-function baixaMassa(){
+function baixaMassa(){if(!exigirSupremo('dar baixa em massa'))return;
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});  if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
@@ -968,7 +1065,7 @@ function baixaMassa(){
     '<button class="btn btn-primary" onclick="confirmarBaixaMassa()">✓ Confirmar baixa em massa</button>'
   );
 }
-function confirmarBaixaMassa(){
+function confirmarBaixaMassa(){if(!exigirSupremo('dar baixa em massa'))return;
   const ids=_idsBaixaMassa;
   if(!ids||!ids.length){alert('Nenhuma mensalidade selecionada.');return;}
   const data=document.getElementById('bxDataMassa').value;
@@ -1143,7 +1240,7 @@ function gerarMes(){
 
 // Reverte a ação "Gerar mês" para o período selecionado.
 // Exclui todas as mensalidades do mês e remove receitas vinculadas às que já foram pagas.
-function abrirExcluirMesMensalidades(){
+function abrirExcluirMesMensalidades(){if(!exigirSupremo('excluir todas as mensalidades do mês'))return;
   const mes=filtroMes,ano=filtroAno;
   const mensalidadesMes=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
   if(!mensalidadesMes.length){
@@ -1177,7 +1274,7 @@ function abrirExcluirMesMensalidades(){
   );
 }
 
-async function excluirMesMensalidades(){
+async function excluirMesMensalidades(){if(!exigirSupremo('excluir todas as mensalidades do mês'))return;
   const confirmacao=document.getElementById('confirmarExcluirMesMens');
   if(!confirmacao||!confirmacao.checked){
     alert('Marque a confirmação antes de excluir as mensalidades do mês.');
@@ -1259,14 +1356,14 @@ function removerLancamentoDaMensalidade(m){
   m.dataPagamento=null;
   m.lancamentoId=null;
 }
-function estornar(id){
+function estornar(id){if(!exigirSupremo('estornar pagamentos'))return;
   confirmar('Estornar este pagamento?',()=>{
     const m=db.mensalidades.find(x=>x.id===id);if(!m||m.status!=='pago')return;
     removerLancamentoDaMensalidade(m);
     salvarDB();renderMens();
   });
 }
-function estornoMassa(){
+function estornoMassa(){if(!exigirSupremo('estornar pagamentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   const pagas=ids.map(id=>db.mensalidades.find(m=>m.id===id)).filter(m=>m&&m.status==='pago');
   if(!pagas.length){alert('Nenhuma mensalidade paga foi selecionada.');return;}
@@ -1291,7 +1388,7 @@ function origemDoLancamento(id){
 // LANCAMENTOS
 function setFiltroTipoLanc(v){filtroTipoLanc=v;renderLanc();}
 function pgLancamentos(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'lancamento\',\'Histórico de lançamentos\')">&#128337; Histórico geral</button><button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'lancamento\',\'Histórico de lançamentos\')">&#128337; Histórico geral</button>')+'<button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
   renderLanc();
 }
 function renderLanc(){
@@ -1305,15 +1402,17 @@ function renderLanc(){
     ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
     :lista.map(l=>{
       const origem=origemDoLancamento(l.id);
-      const cb=origem
+      const cb=!isSupremo()?'—':(origem
         ?'<input type="checkbox" class="cb-select cb-lanc" disabled title="Lançamento automático: altere no módulo '+escapeAttr(origem.tipo)+'">'
-        :'<input type="checkbox" class="cb-select cb-lanc" data-id="'+l.id+'" onchange="atualizarBulkLanc()" title="Selecionar lançamento manual">';
-      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'lancamento\',\''+l.id+'\',\''+escapeAttr(l.descricao||'Lançamento')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>';
+        :'<input type="checkbox" class="cb-select cb-lanc" data-id="'+l.id+'" onchange="atualizarBulkLanc()" title="Selecionar lançamento manual">');
+      const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'lancamento\',\''+l.id+'\',\''+escapeAttr(l.descricao||'Lançamento')+'\')">&#128337;</button>');
+      const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir lançamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar lançamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div>'+
-    '<div id="bulkBarLanc" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountLanc">0 selecionados</span><button class="btn btn-primary btn-sm" onclick="editarMassaLanc()">&#9999;&#65039; Editar categoria/pagamento</button><button class="btn btn-danger btn-sm" onclick="excluirMassaLanc()">&#128465; Excluir selecionados</button><button class="btn btn-ghost btn-sm" onclick="limparSelLanc()">&#10005; Limpar seleção</button></div>'+
-    '<div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosLanc" onchange="toggleTodosLanc(this)" title="Selecionar lançamentos manuais"></th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+    somenteSupremo('<div id="bulkBarLanc" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountLanc">0 selecionados</span><button class="btn btn-primary btn-sm" onclick="editarMassaLanc()">&#9999;&#65039; Editar categoria/pagamento</button><button class="btn btn-danger btn-sm" onclick="excluirMassaLanc()">&#128465; Excluir selecionados</button><button class="btn btn-ghost btn-sm" onclick="limparSelLanc()">&#10005; Limpar seleção</button></div>')+
+    '<div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosLanc" onchange="toggleTodosLanc(this)" title="Selecionar lançamentos manuais">':'—')+'</th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function atualizarBulkLanc(){
   const cbs=[...document.querySelectorAll('.cb-lanc:checked')];
@@ -1325,7 +1424,7 @@ function atualizarBulkLanc(){
   const cbH=document.getElementById('cbTodosLanc');
   if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
 }
-function toggleTodosLanc(cbH){
+function toggleTodosLanc(cbH){if(!isSupremo())return;
   document.querySelectorAll('.cb-lanc:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkLanc();
 }
@@ -1336,7 +1435,7 @@ function limparSelLanc(){
   atualizarBulkLanc();
 }
 let _idsEditMassaLanc=[];
-function editarMassaLanc(){
+function editarMassaLanc(){if(!exigirSupremo('editar lançamentos em massa'))return;
   _idsEditMassaLanc=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
   if(!_idsEditMassaLanc.length){alert('Selecione pelo menos um lançamento manual.');return;}
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
@@ -1349,7 +1448,7 @@ function editarMassaLanc(){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarEditMassaLanc()">&#10003; Aplicar alterações</button>'
   );
 }
-function confirmarEditMassaLanc(){
+function confirmarEditMassaLanc(){if(!exigirSupremo('editar lançamentos em massa'))return;
   const categoria=document.getElementById('massaLancCat').value;
   const forma=document.getElementById('massaLancForma').value;
   if(!categoria&&!forma){alert('Escolha pelo menos uma alteração.');return;}
@@ -1365,7 +1464,7 @@ function confirmarEditMassaLanc(){
   salvarDB();closeModal();renderLanc();
   alert(alterados+' lançamento(s) atualizado(s).');
 }
-function excluirMassaLanc(){
+function excluirMassaLanc(){if(!exigirSupremo('excluir lançamentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
   if(!ids.length){alert('Selecione pelo menos um lançamento manual.');return;}
   confirmar('Excluir permanentemente '+ids.length+' lançamento(s) manual(is)?',()=>{
@@ -1462,7 +1561,7 @@ function editarLanc(id){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function excluirLanc(id){
+function excluirLanc(id){if(!exigirSupremo('excluir lançamentos'))return;
   const origem=origemDoLancamento(id);
   if(origem){
     alert('Este lançamento foi gerado por '+origem.tipo+' e deve ser excluído ou estornado na área de origem.');
@@ -1476,7 +1575,7 @@ function excluirLanc(id){
 
 // TRABALHADORES
 function pgTrabalhadores(){
-  document.getElementById('topbarActions').innerHTML='<button class="btn btn-primary" onclick="novoTrab()">+ Trabalhador</button>';
+  document.getElementById('topbarActions').innerHTML=somenteSupremo('<button class="btn btn-primary" onclick="novoTrab()">+ Trabalhador</button>');
   renderTrabs();
 }
 function renderTrabs(){
@@ -1499,7 +1598,9 @@ function renderTrabs(){
         ?' <span class="badge badge-amarelo" title="Motivo da isenção">Isento · '+escapeHTML(isencaoPeriodo.tag||'Sem justificativa')+'</span>'
         :'';
       const rowStyle=!existeNoPeriodo?'opacity:0.45;':'';
-      return '<tr style="'+rowStyle+'"><td><input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()"></td><td><strong>'+escapeHTML(t.nome)+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+escapeHTML(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+badgeIsencao+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td><button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button></td></tr>';
+      const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()">':'—';
+      const acoes=somenteSupremo('<button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button>');
+      return '<tr style="'+rowStyle+'"><td>'+seletor+'</td><td><strong>'+escapeHTML(t.nome)+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+escapeHTML(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+badgeIsencao+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td>'+acoes+'</td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page">'+
@@ -1509,16 +1610,16 @@ function renderTrabs(){
       '<div class="metric"><div class="metric-label">Válidos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div>'+
       '<div class="metric"><div class="metric-label">Mensalidade média</div><div class="metric-value neutro">'+fmt(cobraveisNoPeriodo.length?cobraveisNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/cobraveisNoPeriodo.length:0)+'</div><div class="metric-sub">Somente trabalhadores cobrados</div></div>'+
     '</div>'+
-    '<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
+    somenteSupremo('<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountTrabs">0 selecionados</span>'+
       '<button class="btn btn-primary btn-sm" onclick="alterarStatusMassaTrabs(true)">&#10003; Ativar</button>'+
       '<button class="btn btn-danger btn-sm" onclick="alterarStatusMassaTrabs(false)">&#10005; Inativar</button>'+
       '<button class="btn btn-outline btn-sm" onclick="editMassaTrabs()">&#9999;&#65039; Editar valor/status</button>'+
       '<button class="btn btn-ghost btn-sm" onclick="limparSelTrabs()">Limpar seleção</button>'+
-    '</div>'+
+    '</div>')+
     '<div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
-      '<th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos"></th>'+
+      '<th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos">':'—')+'</th>'+
       '<th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no período</th><th>Ações</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
@@ -1532,7 +1633,7 @@ function atualizarBulkTrabs(){
   const cbH=document.getElementById('cbTodosTrabs');
   if(cbH)cbH.checked=todos.length>0&&todos.every(c=>c.checked);
 }
-function toggleTodosTrabs(cbH){
+function toggleTodosTrabs(cbH){if(!isSupremo())return;
   document.querySelectorAll('.cb-trab').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkTrabs();
 }
@@ -1542,7 +1643,7 @@ function limparSelTrabs(){
   if(cbH)cbH.checked=false;
   atualizarBulkTrabs();
 }
-function alterarStatusMassaTrabs(ativo){
+function alterarStatusMassaTrabs(ativo){if(!exigirSupremo('alterar trabalhadores em massa'))return;
   const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
   if(!ids.length){alert('Selecione pelo menos um trabalhador.');return;}
   const acao=ativo?'ativar':'inativar';
@@ -1557,7 +1658,7 @@ function alterarStatusMassaTrabs(ativo){
   });
 }
 
-function editMassaTrabs(){
+function editMassaTrabs(){if(!exigirSupremo('editar trabalhadores em massa'))return;
   const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   openModal(
@@ -1587,7 +1688,7 @@ function editMassaTrabs(){
     }
   },50);
 }
-function confirmarEditMassa(ids){
+function confirmarEditMassa(ids){if(!exigirSupremo('editar trabalhadores em massa'))return;
   const novoValorStr=document.getElementById('massaValor').value.trim();
   const novoStatus=document.getElementById('massaStatus').value;
   const novoValor=novoValorStr!==''?parseFloat(novoValorStr):null;
@@ -1664,9 +1765,9 @@ function alternarCampoIsencaoTrab(){
   if(marcado)document.getElementById('tTagIsencao')?.focus();
 }
 
-function novoTrab(){openModal('Novo trabalhador',formTrab({}),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab()">Salvar</button>');}
-function editTrab(id){const t=db.trabalhadores.find(x=>x.id===id);if(!t)return;openModal('Editar trabalhador',formTrab(t),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab(\''+id+'\')">Salvar</button>');}
-function salvarTrab(id){
+function novoTrab(){if(!exigirSupremo('cadastrar trabalhadores'))return;openModal('Novo trabalhador',formTrab({}),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab()">Salvar</button>');}
+function editTrab(id){if(!exigirSupremo('editar trabalhadores'))return;const t=db.trabalhadores.find(x=>x.id===id);if(!t)return;openModal('Editar trabalhador',formTrab(t),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab(\''+id+'\')">Salvar</button>');}
+function salvarTrab(id){if(!exigirSupremo('alterar trabalhadores'))return;
   const nome=document.getElementById('tNome').value.trim();
   if(!nome){alert('Informe o nome.');return;}
 
@@ -1810,7 +1911,7 @@ function salvarTrab(id){
   }
 }
 
-function delTrab(id){
+function delTrab(id){if(!exigirSupremo('excluir trabalhadores'))return;
   const possuiHistorico=db.mensalidades.some(m=>m.trabalhadorId===id);
   if(possuiHistorico){
     alert('Este trabalhador possui histórico de mensalidades e não pode ser excluído. Marque-o como inativo para preservar os relatórios.');
@@ -1821,8 +1922,13 @@ function delTrab(id){
 
 // CANTINA
 function pgCantina(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'cantina\',\'Histórico da cantina\')">&#128337; Histórico geral</button><button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'cantina\',\'Histórico da cantina\')">&#128337; Histórico geral</button>')+'<button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button></div>';
   renderCantina();
+}
+function formaPagamentoCantina(item){
+  if(item?.formaPagamento)return item.formaPagamento;
+  const lanc=item?.lancamentoId?db.lancamentos.find(l=>l.id===item.lancamentoId):null;
+  return lanc?.formaPagamento||'-';
 }
 function renderCantina(){
   const mes=filtroMes,ano=filtroAno;
@@ -1831,12 +1937,17 @@ function renderCantina(){
   const rec=lista.filter(c=>c.tipo==='entrada').reduce((a,c)=>a+c.valor,0);
   const cus=lista.filter(c=>c.tipo==='custo').reduce((a,c)=>a+c.valor,0);
   const lin=lista.length===0
-    ?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
-    :lista.map(c=>'<tr><td><input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento"></td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'cantina\',\''+c.id+'\',\''+escapeAttr(c.descricao||'Movimento da cantina')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
+    ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
+    :lista.map(c=>{
+      const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento">':'—';
+      const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'cantina\',\''+c.id+'\',\''+escapeAttr(c.descricao||'Movimento da cantina')+'\')">&#128337;</button>');
+      const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+      return '<tr><td>'+seletor+'</td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td>'+escapeHTML(formaPagamentoCantina(c))+'</td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></td></tr>';
+    }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div>'+
-    '<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>'+
-    '<div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;"><input type="checkbox" class="cb-select" id="cbTodosCantina" onchange="toggleTodosCantina(this)" title="Selecionar todos os movimentos"></th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+    somenteSupremo('<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>')+
+    '<div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosCantina" onchange="toggleTodosCantina(this)" title="Selecionar todos os movimentos">':'—')+'</th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function atualizarBulkCantina(){
   const cbs=[...document.querySelectorAll('.cb-cantina:checked')];
@@ -1848,7 +1959,7 @@ function atualizarBulkCantina(){
   const cbH=document.getElementById('cbTodosCantina');
   if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
 }
-function toggleTodosCantina(cbH){
+function toggleTodosCantina(cbH){if(!isSupremo())return;
   document.querySelectorAll('.cb-cantina').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkCantina();
 }
@@ -1858,7 +1969,7 @@ function limparSelCantina(){
   if(cbH){cbH.checked=false;cbH.indeterminate=false;}
   atualizarBulkCantina();
 }
-function excluirMassaCantina(){
+function excluirMassaCantina(){if(!exigirSupremo('excluir movimentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-cantina:checked')].map(c=>c.dataset.id);
   if(!ids.length){alert('Selecione pelo menos um movimento da cantina.');return;}
   confirmar('Excluir '+ids.length+' movimento(s) da cantina? Os lançamentos financeiros vinculados também serão removidos.',()=>{
@@ -1874,14 +1985,21 @@ function excluirMassaCantina(){
 function novaCantina(){
   const agora=new Date();
   const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
-  openModal('Movimento na Cantina','<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+dataDefault+'"></div></div><div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>');
+  const formas=['Dinheiro','PIX','Transferência','Cartão','Cheque','Outro'];
+  openModal('Movimento na Cantina',
+    '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="cTipo"><option value="entrada">Entrada (venda)</option><option value="custo">Custo (compra)</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+dataDefault+'"></div></div>'+
+    '<div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="cDesc" placeholder="Ex: Venda de salgados..."></div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" min="0" step="0.01" placeholder="0,00"></div><div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="cForma">'+formas.map(f=>'<option value="'+f+'">'+f+'</option>').join('')+'</select></div></div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>'
+  );
 }
 function salvarCantina(editId){
   const tipo=document.getElementById('cTipo').value;
   const data=document.getElementById('cData').value;
   const desc=document.getElementById('cDesc').value.trim();
   const valor=parseFloat(document.getElementById('cValor').value);
-  if(!data||!desc||!valor||valor<=0){alert('Preencha todos os campos corretamente.');return;}
+  const forma=document.getElementById('cForma').value;
+  if(!data||!desc||!valor||valor<=0||!forma){alert('Preencha todos os campos corretamente.');return;}
   if(editId){
     // MODO EDICAO: atualiza cantina e o lancamento vinculado
     const idx=db.cantina.findIndex(c=>c.id===editId);
@@ -1891,22 +2009,25 @@ function salvarCantina(editId){
     let lancamentoId=item.lancamentoId;
     const li=lancamentoId?db.lancamentos.findIndex(l=>l.id===lancamentoId):-1;
     if(li>=0){
-      db.lancamentos[li]={...db.lancamentos[li],data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor};
+      db.lancamentos[li]={...db.lancamentos[li],data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor,formaPagamento:forma};
     } else {
       lancamentoId=uid();
-      db.lancamentos.push({id:lancamentoId,data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor,formaPagamento:'Dinheiro',status:'confirmado'});
+      db.lancamentos.push({id:lancamentoId,data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor,formaPagamento:forma,status:'confirmado'});
     }
-    db.cantina[idx]={...item,tipo,data,descricao:desc,valor,lancamentoId};
+    db.cantina[idx]={...item,tipo,data,descricao:desc,valor,formaPagamento:forma,lancamentoId};
   } else {
     // MODO CRIACAO
     const lancId=uid();
-    db.cantina.push({id:uid(),tipo,data,descricao:desc,valor,lancamentoId:lancId});
-    db.lancamentos.push({id:lancId,data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor,formaPagamento:'Dinheiro',status:'confirmado'});
+    db.cantina.push({id:uid(),tipo,data,descricao:desc,valor,formaPagamento:forma,lancamentoId:lancId});
+    db.lancamentos.push({id:lancId,data,tipo:tipo==='entrada'?'receita':'despesa',categoria:'Cantina',descricao:'Cantina: '+desc,valor,formaPagamento:forma,status:'confirmado'});
   }
   salvarDB();closeModal();renderCantina();
 }
 function editarCantina(id){
   const c=db.cantina.find(x=>x.id===id);if(!c)return;
+  const formas=['Dinheiro','PIX','Transferência','Cartão','Cheque','Outro'];
+  const formaAtual=formaPagamentoCantina(c)==='-'?'Dinheiro':formaPagamentoCantina(c);
+  const formasOpts=[...new Set([...formas,formaAtual])];
   openModal(
     'Editar movimento',
     '<div class="alert alert-amarelo" style="font-size:12px;margin-bottom:16px;">&#9998; Editando registro existente — será atualizado, não duplicado.</div>'+
@@ -1915,11 +2036,11 @@ function editarCantina(id){
       '<option value="custo" '+(c.tipo==='custo'?'selected':'')+'>Custo (compra)</option>'+
     '</select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="cData" value="'+(c.data||'')+'"></div></div>'+
     '<div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-control" id="cDesc" value="'+escapeAttr(c.descricao||'')+'" placeholder="Ex: Venda de salgados..."></div>'+
-    '<div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" value="'+(c.valor||'')+'" min="0" step="0.01"></div>',
+    '<div class="form-row"><div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-control" id="cValor" value="'+(c.valor||'')+'" min="0" step="0.01"></div><div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="cForma">'+formasOpts.map(f=>'<option value="'+escapeAttr(f)+'" '+(f===formaAtual?'selected':'')+'>'+escapeHTML(f)+'</option>').join('')+'</select></div></div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function delCantina(id){confirmar('Excluir este movimento?',()=>{
+function delCantina(id){if(!exigirSupremo('excluir movimentos da cantina'))return;confirmar('Excluir este movimento?',()=>{
   const item=db.cantina.find(c=>c.id===id);
   if(item&&item.lancamentoId){db.lancamentos=db.lancamentos.filter(l=>l.id!==item.lancamentoId);}
   db.cantina=db.cantina.filter(c=>c.id!==id);
@@ -1928,7 +2049,7 @@ function delCantina(id){confirmar('Excluir este movimento?',()=>{
 
 // RIFAS
 function pgRifas(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'rifa\',\'Histórico de rifas e eventos\')">&#128337; Histórico geral</button><button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'rifa\',\'Histórico de rifas e eventos\')">&#128337; Histórico geral</button>')+'<button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button></div>';
   renderRifas();
 }
 function renderRifas(){
@@ -1938,7 +2059,12 @@ function renderRifas(){
   const totArr=lista.reduce((a,r)=>a+r.arrecadado,0);
   const totCus=lista.reduce((a,r)=>a+r.custo,0);
   const totRes=totArr-totCus;
-  let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{const res=r.arrecadado-r.custo;return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'rifa\',\''+r.id+'\',\''+escapeAttr(r.nome||'Rifa/evento')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button></div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';}).join('');
+  let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{
+    const res=r.arrecadado-r.custo;
+    const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'rifa\',\''+r.id+'\',\''+escapeAttr(r.nome||'Rifa/evento')+'\')">&#128337;</button>');
+    const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+    return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';
+  }).join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total arrecadado</div><div class="metric-value positivo">'+fmt(totArr)+'</div><div class="metric-sub">'+lista.length+' evento(s) em '+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Total de custos</div><div class="metric-value negativo">'+fmt(totCus)+'</div></div><div class="metric"><div class="metric-label">Resultado geral</div><div class="metric-value '+(totRes>=0?'positivo':'negativo')+'">'+fmt(totRes)+'</div></div></div>'+cards+'</div>';
 }
 function novaRifa(){
@@ -2009,7 +2135,7 @@ function editarRifa(id){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function delRifa(id){confirmar('Excluir esta rifa/evento?',()=>{
+function delRifa(id){if(!exigirSupremo('excluir rifas e eventos'))return;confirmar('Excluir esta rifa/evento?',()=>{
   const rifa=db.rifas.find(r=>r.id===id);
   if(rifa){
     if(rifa.lancamentoArrId)db.lancamentos=db.lancamentos.filter(l=>l.id!==rifa.lancamentoArrId);
@@ -2162,11 +2288,11 @@ function montarSecaoCantinaRelatorio(mes,ano){
     return d.getMonth()+1===mes&&d.getFullYear()===ano;
   }).sort((a,b)=>a.data.localeCompare(b.data));
   if(!lista.length)return '<div class="report-empty">Nenhum movimento de cantina neste período.</div>';
-  const receitas=lista.filter(c=>c.tipo==='receita').reduce((a,c)=>a+(Number(c.valor)||0),0);
-  const despesas=lista.filter(c=>c.tipo==='despesa').reduce((a,c)=>a+(Number(c.valor)||0),0);
+  const receitas=lista.filter(c=>c.tipo==='entrada').reduce((a,c)=>a+(Number(c.valor)||0),0);
+  const despesas=lista.filter(c=>c.tipo==='custo').reduce((a,c)=>a+(Number(c.valor)||0),0);
   const resumo='<div class="report-summary-row"><div class="report-summary-box"><div class="report-summary-label">Receitas</div><div class="report-summary-value valor-positivo">'+fmt(receitas)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Despesas</div><div class="report-summary-value valor-negativo">'+fmt(despesas)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Resultado</div><div class="report-summary-value '+(receitas-despesas>=0?'valor-positivo':'valor-negativo')+'">'+fmt(receitas-despesas)+'</div></div></div>';
-  const linhas=lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao||'-')+'</td><td>'+(c.tipo==='receita'?'Receita':'Despesa')+'</td><td class="'+(c.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='receita'?'+':'-')+fmt(c.valor)+'</td></tr>').join('');
-  return resumo+'<div class="table-wrap"><table class="report-table"><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
+  const linhas=lista.map(c=>'<tr><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao||'-')+'</td><td>'+(c.tipo==='entrada'?'Entrada':'Custo')+'</td><td>'+escapeHTML(formaPagamentoCantina(c))+'</td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td></tr>').join('');
+  return resumo+'<div class="table-wrap"><table class="report-table"><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Pagamento</th><th>Valor</th></tr></thead><tbody>'+linhas+'</tbody></table></div>';
 }
 function montarSecaoRifasRelatorio(mes,ano){
   const lista=db.rifas.filter(r=>{
@@ -2274,7 +2400,7 @@ Object.assign(window,{
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
-  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,
+  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,
 });
 
 async function init(){
@@ -2283,6 +2409,7 @@ async function init(){
   document.getElementById('pageContent').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--texto3);"><div style="font-size:32px;">&#9789;</div><div style="font-size:15px;">Conectando ao banco de dados...</div></div>';
   try{
     await carregarDB();
+    await migrarAuditoriaLegadaSeNecessario();
     // Dados de exemplo não são inseridos automaticamente em produção.
     migrarTrabalhadores();
     const agora=new Date();
@@ -2308,9 +2435,21 @@ setPersistence(firebaseAuth,browserLocalPersistence).catch(erro=>{
 
 onAuthStateChanged(firebaseAuth,async user=>{
   if(user){
-    mostrarMensagemAuth('');
-    mostrarAplicativo(user);
-    await init();
+    try{
+      mostrarMensagemAuth('');
+      await carregarPerfilAcesso(user);
+      await carregarAuditoriaPorPerfil();
+      mostrarAplicativo(user);
+      await init();
+    }catch(erro){
+      console.error('Falha ao validar o perfil de acesso:',erro);
+      if(String(erro?.message||erro)==='ACESSO_DESATIVADO'){
+        mostrarMensagemAuth('Este acesso foi desativado pelo administrador.');
+      }else{
+        mostrarMensagemAuth('Não foi possível validar seu nível de acesso. Tente novamente.');
+      }
+      await signOut(firebaseAuth).catch(()=>{});
+    }
   }else{
     encerrarAplicativoLocal();
     mostrarTelaLogin();
