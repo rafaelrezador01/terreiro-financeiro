@@ -114,6 +114,14 @@ th .cb-select{accent-color:var(--branco);}
 .quick-action-icon{font-size:24px;margin-bottom:8px;}
 .quick-action-label{font-size:13px;font-weight:500;}
 .page{animation:fadeIn .25s ease;}
+.audit-list{display:flex;flex-direction:column;gap:10px;}
+.audit-item{border:1px solid var(--borda);border-radius:var(--radius-sm);padding:12px 14px;background:var(--branco);}
+.audit-item-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:5px;}
+.audit-item-action{font-size:13px;font-weight:600;color:var(--texto);}
+.audit-item-date{font-size:11px;color:var(--texto3);white-space:nowrap;}
+.audit-item-user{font-size:12px;color:var(--verde);margin-bottom:4px;word-break:break-word;}
+.audit-item-desc{font-size:12px;color:var(--texto2);line-height:1.45;}
+.audit-legacy{padding:14px;border:1px dashed var(--borda);border-radius:var(--radius-sm);color:var(--texto3);font-size:13px;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 [hidden]{display:none!important;}
@@ -340,7 +348,7 @@ const firebaseAuth=getAuth(firebaseApp);
 const firebaseDB=getDatabase(firebaseApp);
 const dbRef=ref(firebaseDB,'axe_financeiro');
 
-let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[]};
+let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[],auditoria:[]};
 let paginaAtual='dashboard';
 let filtroMes, filtroAno;
 let filtroTipoLanc='todos';
@@ -358,6 +366,7 @@ let _pararEscutaDB=null;
 
 let _salvamentosPendentes=0;
 let _focoAntesModal=null;
+let _baseAuditoria=null;
 
 function normalizarDB(data){
   const origem=data&&typeof data==='object'?data:{};
@@ -366,9 +375,140 @@ function normalizarDB(data){
     mensalidades:Array.isArray(origem.mensalidades)?origem.mensalidades:[],
     lancamentos:Array.isArray(origem.lancamentos)?origem.lancamentos:[],
     rifas:Array.isArray(origem.rifas)?origem.rifas:[],
-    cantina:Array.isArray(origem.cantina)?origem.cantina:[]
+    cantina:Array.isArray(origem.cantina)?origem.cantina:[],
+    auditoria:Array.isArray(origem.auditoria)?origem.auditoria:[]
   };
 }
+
+// ── HISTÓRICO E AUDITORIA ─────────────────────────────────────────────────
+const CAMPOS_META_AUDITORIA=new Set([
+  'criadoEm','criadoPorUid','criadoPorEmail','atualizadoEm','atualizadoPorUid','atualizadoPorEmail'
+]);
+const ENTIDADES_AUDITAVEIS=[
+  {chave:'lancamentos',entidade:'lancamento',titulo:'Lançamento'},
+  {chave:'cantina',entidade:'cantina',titulo:'Cantina'},
+  {chave:'rifas',entidade:'rifa',titulo:'Rifa/evento'},
+  {chave:'mensalidades',entidade:'mensalidade',titulo:'Mensalidade'}
+];
+function cloneSimples(valor){return JSON.parse(JSON.stringify(valor));}
+function registroSemMeta(registro){
+  const limpo={};
+  Object.entries(registro||{}).forEach(([chave,valor])=>{if(!CAMPOS_META_AUDITORIA.has(chave))limpo[chave]=valor;});
+  return limpo;
+}
+function estadoAuditavel(origem=db){
+  const estado={};
+  ENTIDADES_AUDITAVEIS.forEach(cfg=>{estado[cfg.chave]=(origem[cfg.chave]||[]).map(registroSemMeta);});
+  return cloneSimples(estado);
+}
+function atualizarBaseAuditoria(){_baseAuditoria=estadoAuditavel(db);}
+function usuarioAuditoriaAtual(){
+  const user=firebaseAuth.currentUser;
+  return{
+    uid:user?.uid||'nao-identificado',
+    email:user?.email||'Usuário não identificado',
+    nome:user?.displayName||user?.email||'Usuário não identificado'
+  };
+}
+function nomeTrabalhadorAuditoria(id){return(db.trabalhadores.find(t=>t.id===id)||{}).nome||'Trabalhador';}
+function resumoRegistroAuditoria(entidade,registro){
+  if(entidade==='lancamento')return registro.descricao||'Lançamento sem descrição';
+  if(entidade==='cantina')return registro.descricao||'Movimento da cantina';
+  if(entidade==='rifa')return registro.nome||'Rifa/evento';
+  if(entidade==='mensalidade')return'Mensalidade de '+nomeTrabalhadorAuditoria(registro.trabalhadorId)+' — '+mesNome(registro.mes)+'/'+registro.ano;
+  return'Registro';
+}
+function valorAuditoria(valor){
+  if(valor===null||valor===undefined||valor==='')return'vazio';
+  if(typeof valor==='object')return'conteúdo atualizado';
+  const texto=String(valor);
+  return texto.length>80?texto.slice(0,77)+'...':texto;
+}
+function detalhesAlteracaoAuditoria(antes,depois){
+  const nomes={data:'Data',tipo:'Tipo',categoria:'Categoria',descricao:'Descrição',valor:'Valor',formaPagamento:'Pagamento',status:'Status',dataPagamento:'Data de pagamento',nome:'Nome',arrecadado:'Arrecadado',custo:'Custo',mes:'Mês',ano:'Ano'};
+  const chaves=new Set([...Object.keys(antes||{}),...Object.keys(depois||{})]);
+  const alterados=[];
+  chaves.forEach(chave=>{
+    if(chave==='id'||CAMPOS_META_AUDITORIA.has(chave))return;
+    if(JSON.stringify(antes?.[chave])!==JSON.stringify(depois?.[chave])){
+      alterados.push((nomes[chave]||chave)+': '+valorAuditoria(antes?.[chave])+' → '+valorAuditoria(depois?.[chave]));
+    }
+  });
+  return alterados.slice(0,8).join(' | ')||'Registro salvo sem mudança identificável.';
+}
+function adicionarEventoAuditoria(entidade,registroId,acao,descricao,usuario,ocorridoEm){
+  if(!Array.isArray(db.auditoria))db.auditoria=[];
+  db.auditoria.push({
+    id:uid(),entidade,registroId:String(registroId||''),acao,descricao,
+    ocorridoEm,usuarioUid:usuario.uid,usuarioEmail:usuario.email,usuarioNome:usuario.nome
+  });
+}
+function prepararAuditoriaAntesSalvar(){
+  if(!_baseAuditoria){atualizarBaseAuditoria();return;}
+  const usuario=usuarioAuditoriaAtual();
+  const ocorridoEm=new Date().toISOString();
+  ENTIDADES_AUDITAVEIS.forEach(cfg=>{
+    const anteriores=_baseAuditoria[cfg.chave]||[];
+    const atuais=db[cfg.chave]||[];
+    const mapaAnterior=new Map(anteriores.map(r=>[String(r.id),r]));
+    const mapaAtual=new Map(atuais.map(r=>[String(r.id),r]));
+    atuais.forEach(registro=>{
+      const id=String(registro.id);
+      const anterior=mapaAnterior.get(id);
+      const atualLimpo=registroSemMeta(registro);
+      if(!anterior){
+        registro.criadoEm=ocorridoEm;registro.criadoPorUid=usuario.uid;registro.criadoPorEmail=usuario.email;
+        registro.atualizadoEm=ocorridoEm;registro.atualizadoPorUid=usuario.uid;registro.atualizadoPorEmail=usuario.email;
+        adicionarEventoAuditoria(cfg.entidade,id,'Criado',resumoRegistroAuditoria(cfg.entidade,registro),usuario,ocorridoEm);
+      }else if(JSON.stringify(anterior)!==JSON.stringify(atualLimpo)){
+        registro.atualizadoEm=ocorridoEm;registro.atualizadoPorUid=usuario.uid;registro.atualizadoPorEmail=usuario.email;
+        adicionarEventoAuditoria(cfg.entidade,id,'Editado',resumoRegistroAuditoria(cfg.entidade,registro)+' — '+detalhesAlteracaoAuditoria(anterior,atualLimpo),usuario,ocorridoEm);
+      }
+    });
+    anteriores.forEach(registro=>{
+      if(!mapaAtual.has(String(registro.id))){
+        adicionarEventoAuditoria(cfg.entidade,registro.id,'Excluído',resumoRegistroAuditoria(cfg.entidade,registro),usuario,ocorridoEm);
+      }
+    });
+  });
+  atualizarBaseAuditoria();
+}
+function fmtDataHoraAuditoria(valor){
+  const data=new Date(valor||'');
+  if(Number.isNaN(data.getTime()))return'Data não registrada';
+  return new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'medium'}).format(data);
+}
+function eventosAuditoria(entidade,registroId=null){
+  return(Array.isArray(db.auditoria)?db.auditoria:[])
+    .filter(e=>e.entidade===entidade&&(registroId===null||String(e.registroId)===String(registroId)))
+    .sort((a,b)=>String(b.ocorridoEm||'').localeCompare(String(a.ocorridoEm||'')));
+}
+function htmlEventosAuditoria(eventos,mensagemVazia){
+  if(!eventos.length)return'<div class="audit-legacy">'+escapeHTML(mensagemVazia||'Nenhum histórico disponível.')+'</div>';
+  return'<div class="audit-list">'+eventos.map(e=>
+    '<div class="audit-item">'+
+      '<div class="audit-item-head"><div class="audit-item-action">'+escapeHTML(e.acao||'Alteração')+'</div><div class="audit-item-date">'+escapeHTML(fmtDataHoraAuditoria(e.ocorridoEm))+'</div></div>'+
+      '<div class="audit-item-user">'+escapeHTML(e.usuarioEmail||e.usuarioNome||'Usuário não identificado')+'</div>'+
+      (e.descricao?'<div class="audit-item-desc">'+escapeHTML(e.descricao)+'</div>':'')+
+    '</div>'
+  ).join('')+'</div>';
+}
+function abrirHistoricoRegistro(entidade,registroId,titulo){
+  openModal(
+    'Histórico — '+(titulo||'Registro'),
+    htmlEventosAuditoria(eventosAuditoria(entidade,registroId),'Este registro já existia antes da ativação do histórico. A autoria e a data original não podem ser recuperadas; as próximas alterações serão registradas.'),
+    '<button class="btn btn-primary" onclick="closeModal()">Fechar</button>'
+  );
+}
+function abrirHistoricoModulo(entidade,titulo){
+  const eventos=eventosAuditoria(entidade).slice(0,300);
+  openModal(
+    titulo,
+    '<div class="text-muted" style="margin-bottom:12px;">Exibindo até 300 ações recentes, inclusive registros excluídos.</div>'+htmlEventosAuditoria(eventos,'Ainda não existem ações registradas neste módulo.'),
+    '<button class="btn btn-primary" onclick="closeModal()">Fechar</button>'
+  );
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 // Salva tudo no Firebase e informa falhas de persistência.
 function salvarDB(){
@@ -376,6 +516,7 @@ function salvarDB(){
     alert('Sua sessão terminou. Entre novamente antes de salvar.');
     return Promise.resolve(false);
   }
+  prepararAuditoriaAntesSalvar();
   _salvamentosPendentes++;
   const payload=JSON.parse(JSON.stringify(db));
   return set(dbRef,payload).catch(erro=>{
@@ -397,6 +538,7 @@ function carregarDB(){
   return new Promise((resolve,reject)=>{
     _pararEscutaDB=onValue(dbRef,(snapshot)=>{
       db=normalizarDB(snapshot.val());
+      atualizarBaseAuditoria();
       if(!_iniciado){
         _iniciado=true;
         resolve();
@@ -717,9 +859,10 @@ function renderDashboard(){
 // MENSALIDADES
 function pgMensalidades(){
   document.getElementById('topbarActions').innerHTML=
-    '<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;\">'+
-      '<button class=\"btn btn-danger\" onclick=\"abrirExcluirMesMensalidades()\">&#128465; Excluir mês</button>'+
-      '<button class=\"btn btn-primary\" onclick=\"gerarMes()\">&#9889; Gerar mês</button>'+
+    '<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+
+      '<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'mensalidade\',\'Histórico de mensalidades\')">&#128337; Histórico geral</button>'+
+      '<button class="btn btn-danger" onclick="abrirExcluirMesMensalidades()">&#128465; Excluir mês</button>'+
+      '<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mês</button>'+
     '</div>';
   renderMens();
 }
@@ -746,7 +889,7 @@ function renderMens(){
         lin+='<tr style="opacity:0.7;"><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" disabled title="Isento neste mês"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td><span class="text-muted">—</span></td><td><span class="badge badge-cinza">Isento</span></td><td>—</td><td><span class="text-muted" style="font-size:12px;">Mês de entrada</span></td></tr>';
       }else{
         const titulo=m.status==='pago'?'Selecionar para estorno em massa':'Selecionar para baixa em massa';
-        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</td></tr>';
+        lin+='<tr><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'mensalidade\',\''+m.id+'\',\'Mensalidade de '+escapeAttr(t.nome||'?')+'\')">&#128337;</button>'+(m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':'<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>')+'</div></td></tr>';
       }
     });
   }
@@ -1148,7 +1291,7 @@ function origemDoLancamento(id){
 // LANCAMENTOS
 function setFiltroTipoLanc(v){filtroTipoLanc=v;renderLanc();}
 function pgLancamentos(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);"><button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'lancamento\',\'Histórico de lançamentos\')">&#128337; Histórico geral</button><button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
   renderLanc();
 }
 function renderLanc(){
@@ -1165,7 +1308,7 @@ function renderLanc(){
       const cb=origem
         ?'<input type="checkbox" class="cb-select cb-lanc" disabled title="Lançamento automático: altere no módulo '+escapeAttr(origem.tipo)+'">'
         :'<input type="checkbox" class="cb-select cb-lanc" data-id="'+l.id+'" onchange="atualizarBulkLanc()" title="Selecionar lançamento manual">';
-      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>';
+      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'lancamento\',\''+l.id+'\',\''+escapeAttr(l.descricao||'Lançamento')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar lancamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir lancamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div>'+
@@ -1678,7 +1821,7 @@ function delTrab(id){
 
 // CANTINA
 function pgCantina(){
-  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"novaCantina()\">+ Movimento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'cantina\',\'Histórico da cantina\')">&#128337; Histórico geral</button><button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button></div>';
   renderCantina();
 }
 function renderCantina(){
@@ -1689,7 +1832,7 @@ function renderCantina(){
   const cus=lista.filter(c=>c.tipo==='custo').reduce((a,c)=>a+c.valor,0);
   const lin=lista.length===0
     ?'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
-    :lista.map(c=>'<tr><td><input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento"></td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
+    :lista.map(c=>'<tr><td><input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento"></td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'cantina\',\''+c.id+'\',\''+escapeAttr(c.descricao||'Movimento da cantina')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button></div></td></tr>').join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div>'+
     '<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>'+
@@ -1785,7 +1928,7 @@ function delCantina(id){confirmar('Excluir este movimento?',()=>{
 
 // RIFAS
 function pgRifas(){
-  document.getElementById('topbarActions').innerHTML='<div style=\"display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);\"><button class=\"btn btn-primary\" onclick=\"novaRifa()\">+ Nova rifa/evento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;"><button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'rifa\',\'Histórico de rifas e eventos\')">&#128337; Histórico geral</button><button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button></div>';
   renderRifas();
 }
 function renderRifas(){
@@ -1795,7 +1938,7 @@ function renderRifas(){
   const totArr=lista.reduce((a,r)=>a+r.arrecadado,0);
   const totCus=lista.reduce((a,r)=>a+r.custo,0);
   const totRes=totArr-totCus;
-  let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{const res=r.arrecadado-r.custo;return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button></div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';}).join('');
+  let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{const res=r.arrecadado-r.custo;return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'rifa\',\''+r.id+'\',\''+escapeAttr(r.nome||'Rifa/evento')+'\')">&#128337;</button><button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button><button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button></div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';}).join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total arrecadado</div><div class="metric-value positivo">'+fmt(totArr)+'</div><div class="metric-sub">'+lista.length+' evento(s) em '+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Total de custos</div><div class="metric-value negativo">'+fmt(totCus)+'</div></div><div class="metric"><div class="metric-label">Resultado geral</div><div class="metric-value '+(totRes>=0?'positivo':'negativo')+'">'+fmt(totRes)+'</div></div></div>'+cards+'</div>';
 }
 function novaRifa(){
@@ -2131,7 +2274,7 @@ Object.assign(window,{
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
-  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,
+  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,
 });
 
 async function init(){
