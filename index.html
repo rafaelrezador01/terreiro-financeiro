@@ -183,6 +183,33 @@ th .cb-select{accent-color:var(--branco);}
   .report-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 
+
+.config-intro{margin-bottom:20px;}
+.config-users{display:grid;gap:16px;}
+.config-user-card{background:var(--branco);border:1px solid var(--borda);border-radius:var(--radius);padding:20px;}
+.config-user-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+.config-user-name{font-weight:600;font-size:16px;}
+.config-user-email{font-size:13px;color:var(--texto3);margin-top:3px;overflow-wrap:anywhere;}
+.config-user-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.config-presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--borda);}
+.config-permissions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;}
+.permission-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 12px;background:var(--creme);border-radius:var(--radius-sm);}
+.permission-copy{min-width:0;}
+.permission-title{font-size:13px;font-weight:600;color:var(--texto);}
+.permission-desc{font-size:11px;color:var(--texto3);margin-top:2px;line-height:1.35;}
+.switch{position:relative;display:inline-flex;width:42px;height:24px;flex:0 0 42px;}
+.switch input{opacity:0;width:0;height:0;position:absolute;}
+.switch-slider{position:absolute;inset:0;background:#b8b8b2;border-radius:999px;cursor:pointer;transition:.2s;}
+.switch-slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s;}
+.switch input:checked+.switch-slider{background:var(--verde);}
+.switch input:checked+.switch-slider:before{transform:translateX(18px);}
+.switch input:disabled+.switch-slider{opacity:.55;cursor:not-allowed;}
+.config-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;}
+.config-status-dot{width:8px;height:8px;border-radius:50%;background:var(--verde);}
+.config-status.inativo{color:var(--vermelho);}.config-status.inativo .config-status-dot{background:var(--vermelho);}
+.config-saving{font-size:12px;color:var(--texto3);min-height:18px;margin-top:12px;}
+@media(max-width:768px){.config-permissions{grid-template-columns:1fr;}.config-user-card{padding:16px;}}
+
 @media(max-width:768px){
   .auth-card{padding:24px 20px;}
   .report-options{grid-template-columns:1fr;}
@@ -294,6 +321,7 @@ th .cb-select{accent-color:var(--branco);}
     <div class="nav-item" data-page="rifas" onclick="navigate('rifas')"><span class="nav-icon">&#127903;</span> Rifas e Eventos</div>
     <div class="nav-item" data-page="trabalhadores" onclick="navigate('trabalhadores')"><span class="nav-icon">&#127807;</span> Trabalhadores</div>
     <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatórios</div>
+    <div class="nav-item" id="navConfiguracoes" data-page="configuracoes" onclick="navigate('configuracoes')" hidden><span class="nav-icon">&#9881;</span> Configurações</div>
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
@@ -352,6 +380,7 @@ const firebaseDB=getDatabase(firebaseApp);
 const dbRef=ref(firebaseDB,'axe_financeiro');
 const raizRef=ref(firebaseDB);
 const auditoriaRef=ref(firebaseDB,'auditoria_financeiro');
+const usuariosAcessosRef=ref(firebaseDB,'usuarios_acessos');
 
 let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[],auditoria:[]};
 let paginaAtual='dashboard';
@@ -369,6 +398,9 @@ let _appInicializado=false;
 let _appInicializando=false;
 let _pararEscutaDB=null;
 let _pararEscutaAuditoria=null;
+let _pararEscutaPerfil=null;
+let _pararEscutaUsuariosConfig=null;
+let _usuariosConfigCache={};
 let perfilAcessoAtual={perfil:'usuario',ativo:true};
 let _auditoriaLegada=[];
 let _eventosAuditoriaPendentes=[];
@@ -389,38 +421,126 @@ function normalizarDB(data,auditoriaAtual=[]){
   };
 }
 
+const PERMISSOES_PADRAO_USUARIO=Object.freeze({
+  mensalidades_operar:true,
+  mensalidades_admin:false,
+  lancamentos_operar:true,
+  lancamentos_admin:false,
+  trabalhadores_gerenciar:false,
+  cantina_operar:true,
+  cantina_admin:false,
+  rifas_operar:true,
+  rifas_admin:false,
+  relatorios_visualizar:true,
+  auditoria_visualizar:false
+});
+const DEFINICOES_PERMISSOES=[
+  {chave:'mensalidades_operar',titulo:'Operar mensalidades',desc:'Gerar o mês e dar baixa individual.'},
+  {chave:'mensalidades_admin',titulo:'Administrar mensalidades',desc:'Estornos, ações em massa e excluir o mês.'},
+  {chave:'lancamentos_operar',titulo:'Operar lançamentos',desc:'Criar e editar receitas e despesas.'},
+  {chave:'lancamentos_admin',titulo:'Administrar lançamentos',desc:'Excluir e executar ações em massa.'},
+  {chave:'trabalhadores_gerenciar',titulo:'Gerenciar trabalhadores',desc:'Cadastrar, editar, inativar, excluir e controlar isenções.'},
+  {chave:'cantina_operar',titulo:'Operar cantina',desc:'Criar e editar movimentos da cantina.'},
+  {chave:'cantina_admin',titulo:'Administrar cantina',desc:'Excluir movimentos e executar exclusão em massa.'},
+  {chave:'rifas_operar',titulo:'Operar rifas e eventos',desc:'Criar e editar rifas e eventos.'},
+  {chave:'rifas_admin',titulo:'Administrar rifas e eventos',desc:'Excluir rifas e eventos.'},
+  {chave:'relatorios_visualizar',titulo:'Visualizar relatórios',desc:'Abrir, personalizar, imprimir e salvar relatórios.'},
+  {chave:'auditoria_visualizar',titulo:'Visualizar históricos',desc:'Consultar autoria, alterações e exclusões.'}
+];
+const PRESETS_PERMISSOES={
+  leitura:{
+    mensalidades_operar:false,mensalidades_admin:false,lancamentos_operar:false,lancamentos_admin:false,
+    trabalhadores_gerenciar:false,cantina_operar:false,cantina_admin:false,rifas_operar:false,rifas_admin:false,
+    relatorios_visualizar:true,auditoria_visualizar:false
+  },
+  operacional:{...PERMISSOES_PADRAO_USUARIO},
+  gestor:Object.fromEntries(Object.keys(PERMISSOES_PADRAO_USUARIO).map(chave=>[chave,true]))
+};
 function isSupremo(){
   return perfilAcessoAtual?.ativo!==false&&perfilAcessoAtual?.perfil==='supremo';
 }
+function temPermissao(chave){
+  if(isSupremo())return true;
+  if(perfilAcessoAtual?.ativo===false)return false;
+  const permissoes=perfilAcessoAtual?.permissoes||{};
+  if(Object.prototype.hasOwnProperty.call(permissoes,chave))return permissoes[chave]===true;
+  return PERMISSOES_PADRAO_USUARIO[chave]===true;
+}
 function somenteSupremo(html){return isSupremo()?html:'';}
+function somentePermissao(chave,html){return temPermissao(chave)?html:'';}
 function exigirSupremo(acao='realizar esta ação'){
   if(isSupremo())return true;
   alert('Acesso restrito. Somente o perfil Supremo pode '+acao+'.');
   return false;
 }
+function exigirPermissao(chave,acao='realizar esta ação'){
+  if(temPermissao(chave))return true;
+  alert('Seu acesso não possui permissão para '+acao+'. Solicite a liberação ao perfil Supremo.');
+  return false;
+}
 function perfilLabel(){return isSupremo()?'Supremo':'Usuário';}
-async function carregarPerfilAcesso(user){
-  const snap=await get(ref(firebaseDB,'usuarios_acessos/'+user.uid));
-  const dados=snap.val()||{};
-  // Correção: normaliza o perfil para evitar falhas por espaços ou letras maiúsculas.
-  const perfilNormalizado=String(dados.perfil||'usuario').trim().toLowerCase();
-  perfilAcessoAtual={
+function dadosPerfilNormalizados(dados,user){
+  const perfilNormalizado=String(dados?.perfil||'usuario').trim().toLowerCase();
+  return{
     perfil:perfilNormalizado==='supremo'?'supremo':'usuario',
-    ativo:dados.ativo!==false,
-    nome:dados.nome||user.displayName||'',
-    email:dados.email||user.email||'',
-    uid:user.uid
+    ativo:dados?.ativo!==false,
+    nome:dados?.nome||user?.displayName||'',
+    email:dados?.email||user?.email||'',
+    uid:user?.uid||'',
+    permissoes:dados?.permissoes&&typeof dados.permissoes==='object'?{...dados.permissoes}:{}
   };
+}
+async function carregarPerfilAcesso(user){
+  const perfilRef=ref(firebaseDB,'usuarios_acessos/'+user.uid);
+  let snap=await get(perfilRef);
+  let dados=snap.val();
+  if(!snap.exists()){
+    const novoPerfil={
+      perfil:'usuario',ativo:true,nome:user.displayName||'',email:user.email||'',criadoEm:Date.now()
+    };
+    try{
+      await update(perfilRef,novoPerfil);
+      dados=novoPerfil;
+    }catch(erro){
+      console.warn('O perfil ainda não foi cadastrado em usuarios_acessos:',erro);
+      dados=novoPerfil;
+    }
+  }
+  perfilAcessoAtual=dadosPerfilNormalizados(dados,user);
   if(!perfilAcessoAtual.ativo)throw new Error('ACESSO_DESATIVADO');
   return perfilAcessoAtual;
 }
 function aplicarPerfilNaInterface(){
   const el=document.getElementById('usuarioLogadoPerfil');
-  if(el){el.textContent=perfilLabel();el.title=isSupremo()?'Acesso administrativo completo':'Acesso operacional';}
+  if(el){el.textContent=perfilLabel();el.title=isSupremo()?'Acesso administrativo completo':'Permissões personalizadas pelo Supremo';}
+  const navConfig=document.getElementById('navConfiguracoes');
+  if(navConfig)navConfig.hidden=!isSupremo();
+  const navRelatorios=document.querySelector('.nav-item[data-page="relatorios"]');
+  if(navRelatorios)navRelatorios.hidden=!temPermissao('relatorios_visualizar');
+}
+function iniciarEscutaPerfilAcesso(user){
+  if(_pararEscutaPerfil){_pararEscutaPerfil();_pararEscutaPerfil=null;}
+  const perfilRef=ref(firebaseDB,'usuarios_acessos/'+user.uid);
+  _pararEscutaPerfil=onValue(perfilRef,snapshot=>{
+    if(!snapshot.exists())return;
+    const anterior=JSON.stringify(perfilAcessoAtual);
+    const podiaVerAuditoria=temPermissao('auditoria_visualizar');
+    perfilAcessoAtual=dadosPerfilNormalizados(snapshot.val(),user);
+    const podeVerAuditoriaAgora=temPermissao('auditoria_visualizar');
+    if(!perfilAcessoAtual.ativo){signOut(firebaseAuth).catch(()=>{});return;}
+    aplicarPerfilNaInterface();
+    if(podiaVerAuditoria!==podeVerAuditoriaAgora&&_appInicializado){carregarAuditoriaPorPerfil().catch(erro=>console.error('Falha ao atualizar auditoria:',erro));}
+    if(anterior!==JSON.stringify(perfilAcessoAtual)&&_appInicializado){
+      if(paginaAtual==='configuracoes'&&!isSupremo()){navigate('dashboard');return;}
+      if(paginaAtual==='relatorios'&&!temPermissao('relatorios_visualizar')){navigate('dashboard');return;}
+      const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
+      if(pages[paginaAtual])pages[paginaAtual]();
+    }
+  },erro=>console.error('Falha ao atualizar permissões em tempo real:',erro));
 }
 function carregarAuditoriaPorPerfil(){
   if(_pararEscutaAuditoria){_pararEscutaAuditoria();_pararEscutaAuditoria=null;}
-  if(!isSupremo()){
+  if(!temPermissao('auditoria_visualizar')){
     db.auditoria=[];
     return Promise.resolve();
   }
@@ -569,7 +689,7 @@ function htmlEventosAuditoria(eventos,mensagemVazia){
   ).join('')+'</div>';
 }
 function abrirHistoricoRegistro(entidade,registroId,titulo){
-  if(!exigirSupremo('consultar o histórico'))return;
+  if(!exigirPermissao('auditoria_visualizar','consultar o histórico'))return;
   openModal(
     'Histórico — '+(titulo||'Registro'),
     htmlEventosAuditoria(eventosAuditoria(entidade,registroId),'Este registro já existia antes da ativação do histórico. A autoria e a data original não podem ser recuperadas; as próximas alterações serão registradas.'),
@@ -577,7 +697,7 @@ function abrirHistoricoRegistro(entidade,registroId,titulo){
   );
 }
 function abrirHistoricoModulo(entidade,titulo){
-  if(!exigirSupremo('consultar o histórico'))return;
+  if(!exigirPermissao('auditoria_visualizar','consultar o histórico'))return;
   const eventos=eventosAuditoria(entidade).slice(0,300);
   openModal(
     titulo,
@@ -636,7 +756,7 @@ function carregarDB(){
         _iniciado=true;
         resolve();
       } else if(_salvamentosPendentes===0){
-        const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios};
+        const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
         if(pages[paginaAtual])pages[paginaAtual]();
       }
     },erro=>{
@@ -685,13 +805,16 @@ function atualizarSeletorGlobal(){
   if(sm)sm.value=filtroMes;
   if(sa)sa.value=filtroAno;
   const fg=document.getElementById('filtroGlobal');
-  if(fg)fg.style.display=paginaAtual==='trabalhadores'?'none':'flex';
+  if(fg)fg.style.display=(paginaAtual==='trabalhadores'||paginaAtual==='configuracoes')?'none':'flex';
 }
 function toggleSidebar(){const s=document.getElementById('sidebar');const o=document.getElementById('overlayBg');const aberto=!s.classList.contains('open');s.classList.toggle('open',aberto);o.style.display=aberto?'block':'none';const h=document.querySelector('.hamburger');if(h)h.setAttribute('aria-expanded',String(aberto));}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlayBg').style.display='none';const h=document.querySelector('.hamburger');if(h)h.setAttribute('aria-expanded','false');}
 
-const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios'};
+const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios',configuracoes:'Configurações'};
 function navigate(page){
+  if(page==='configuracoes'&&!isSupremo()){alert('Acesso restrito ao perfil Supremo.');page='dashboard';}
+  if(page==='relatorios'&&!temPermissao('relatorios_visualizar')){alert('Seu acesso não possui permissão para visualizar relatórios.');page='dashboard';}
+  if(_pararEscutaUsuariosConfig&&page!=='configuracoes'){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
   paginaAtual=page;
   document.querySelectorAll('.nav-item').forEach(n=>{
     n.classList.toggle('active', n.dataset.page===page);
@@ -700,7 +823,7 @@ function navigate(page){
   document.getElementById('topbarActions').innerHTML='';
   closeSidebar();
   atualizarSeletorGlobal();
-  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios};
+  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
   if(pages[page])pages[page]();
 }
 
@@ -824,6 +947,8 @@ function encerrarAplicativoLocal(){
     _pararEscutaAuditoria();
     _pararEscutaAuditoria=null;
   }
+  if(_pararEscutaPerfil){_pararEscutaPerfil();_pararEscutaPerfil=null;}
+  if(_pararEscutaUsuariosConfig){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
   _iniciado=false;
   _appInicializado=false;
   _appInicializando=false;
@@ -945,9 +1070,9 @@ function renderDashboard(){
         '<div style="flex:1;text-align:center;padding:12px;background:var(--creme2);border-radius:var(--radius-sm);"><div style="font-size:14px;font-weight:600;color:var(--texto2);">'+fmt(recebMens)+' / '+fmt(totalMens)+'</div><div class="text-muted">Recebido</div></div></div>'+
       '</div>'+
       '<div class="card"><div class="section-title mb-4">Ações rápidas</div><div class="grid-2" style="gap:10px;">'+
-        '<div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div>'+
-        '<div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div>'+
-        '<div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div>'+
+        somentePermissao('lancamentos_operar','<div class="quick-action" onclick="abrirNovoLanc(\'receita\')"><div class="quick-action-icon">&#128176;</div><div class="quick-action-label">Nova receita</div></div>')+
+        somentePermissao('lancamentos_operar','<div class="quick-action" onclick="abrirNovoLanc(\'despesa\')"><div class="quick-action-icon">&#128184;</div><div class="quick-action-label">Nova despesa</div></div>')+
+        somentePermissao('mensalidades_operar','<div class="quick-action" onclick="navigate(\'mensalidades\')"><div class="quick-action-icon">&#10003;</div><div class="quick-action-label">Dar baixa</div></div>')+
         '<div class="quick-action" onclick="navigate(\'trabalhadores\')"><div class="quick-action-icon">&#128100;</div><div class="quick-action-label">Trabalhadores</div></div>'+
       '</div></div>'+
     '</div>'+
@@ -959,9 +1084,9 @@ function renderDashboard(){
 function pgMensalidades(){
   document.getElementById('topbarActions').innerHTML=
     '<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+
-      somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'mensalidade\',\'Histórico de mensalidades\')">&#128337; Histórico geral</button>')+
-      somenteSupremo('<button class="btn btn-danger" onclick="abrirExcluirMesMensalidades()">&#128465; Excluir mês</button>')+
-      '<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mês</button>'+
+      somentePermissao('auditoria_visualizar','<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'mensalidade\',\'Histórico de mensalidades\')">&#128337; Histórico geral</button>')+
+      somentePermissao('mensalidades_admin','<button class="btn btn-danger" onclick="abrirExcluirMesMensalidades()">&#128465; Excluir mês</button>')+
+      somentePermissao('mensalidades_operar','<button class="btn btn-primary" onclick="gerarMes()">&#9889; Gerar mês</button>')+
     '</div>';
   renderMens();
 }
@@ -988,9 +1113,9 @@ function renderMens(){
         lin+='<tr style="opacity:0.7;"><td><input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" disabled title="Isento neste mês"></td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td><span class="text-muted">—</span></td><td><span class="badge badge-cinza">Isento</span></td><td>—</td><td><span class="text-muted" style="font-size:12px;">Mês de entrada</span></td></tr>';
       }else{
         const titulo=m.status==='pago'?'Selecionar para estorno em massa':'Selecionar para baixa em massa';
-        const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'">':'—';
-        const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'mensalidade\',\''+m.id+'\',\'Mensalidade de '+escapeAttr(t.nome||'?')+'\')">&#128337;</button>');
-        const acao=m.status==='pendente'?'<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>':somenteSupremo('<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>');
+        const seletor=temPermissao('mensalidades_admin')?'<input type="checkbox" class="cb-select cb-mens" data-id="'+m.id+'" onchange="atualizarBulkMens()" title="'+titulo+'">':'—';
+        const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'mensalidade\',\''+m.id+'\',\'Mensalidade de '+escapeAttr(t.nome||'?')+'\')">&#128337;</button>');
+        const acao=m.status==='pendente'?somentePermissao('mensalidades_operar','<button class="btn btn-sm btn-primary" onclick="darBaixa(\''+m.id+'\')">&#10003; Dar baixa</button>'):somentePermissao('mensalidades_admin','<button class="btn btn-sm btn-ghost" onclick="estornar(\''+m.id+'\')">&#8617; Estornar</button>');
         lin+='<tr><td>'+seletor+'</td><td><strong>'+escapeHTML(t.nome||'?')+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+fmt(m.valor)+'</td><td><span class="badge '+(m.status==='pago'?'badge-verde':'badge-vermelho')+'">'+(m.status==='pago'?'Pago':'Pendente')+'</span></td><td>'+(m.dataPagamento?fmtData(m.dataPagamento):'-')+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+acao+'</div></td></tr>';
       }
     });
@@ -1008,7 +1133,7 @@ function renderMens(){
       '<div class="metric"><div class="metric-label">Recebido</div><div class="metric-value positivo">'+fmt(recV)+'</div><div class="metric-sub">'+pg.length+' pagamentos</div></div>'+
       '<div class="metric"><div class="metric-label">Em aberto</div><div class="metric-value negativo">'+fmt(totalV-recV)+'</div><div class="metric-sub">'+pe.length+' pendentes</div></div>'+
     '</div>'+isentosPermanentesInfo+isentosInfo+
-    (isSupremo()?'<div id="bulkBarMens" style="display:none;" class="bulk-bar">': '<div id="bulkBarMens" style="display:none;">')+
+    (temPermissao('mensalidades_admin')?'<div id="bulkBarMens" style="display:none;" class="bulk-bar">': '<div id="bulkBarMens" style="display:none;">')+
       '<span class="bulk-bar-count" id="bulkCountMens">0 selecionadas</span>'+
       '<button class="btn btn-primary btn-sm" id="bulkBtnBaixaMens" onclick="baixaMassa()">&#10003; Dar baixa</button>'+
       '<button class="btn btn-danger btn-sm" id="bulkBtnEstornoMens" onclick="estornoMassa()">&#8617; Estornar pagas</button>'+
@@ -1016,7 +1141,7 @@ function renderMens(){
     '</div>'+
     '<div class="card"><div class="section-header"><div class="section-title">Lista de mensalidades - '+mesNome(mes)+'/'+ano+'</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
-      '<th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar mensalidades pagas e pendentes">':'—')+'</th>'+
+      '<th style="width:32px;">'+(temPermissao('mensalidades_admin')?'<input type="checkbox" class="cb-select" id="cbTodosMens" onchange="toggleTodosMens(this)" title="Selecionar mensalidades pagas e pendentes">':'—')+'</th>'+
       '<th>Trabalhador</th><th>Valor</th><th>Status</th><th>Data pagto</th><th>Ação</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div>'+linInat+'</div>';
 }
@@ -1044,7 +1169,7 @@ function atualizarBulkMens(){
     cbH.indeterminate=cbs.length>0&&!cbH.checked;
   }
 }
-function toggleTodosMens(cbH){if(!isSupremo())return;
+function toggleTodosMens(cbH){if(!temPermissao('mensalidades_admin'))return;
   document.querySelectorAll('.cb-mens:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkMens();
 }
@@ -1055,7 +1180,7 @@ function limparSelMens(){
   atualizarBulkMens();
 }
 let _idsBaixaMassa=[];
-function baixaMassa(){if(!exigirSupremo('dar baixa em massa'))return;
+function baixaMassa(){if(!exigirPermissao('mensalidades_admin','dar baixa em massa'))return;
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   const pendentes=ids.filter(id=>{const m=db.mensalidades.find(x=>x.id===id);return m&&m.status==='pendente';});  if(!pendentes.length){alert('Nenhuma mensalidade pendente selecionada.');return;}
@@ -1070,7 +1195,7 @@ function baixaMassa(){if(!exigirSupremo('dar baixa em massa'))return;
     '<button class="btn btn-primary" onclick="confirmarBaixaMassa()">✓ Confirmar baixa em massa</button>'
   );
 }
-function confirmarBaixaMassa(){if(!exigirSupremo('dar baixa em massa'))return;
+function confirmarBaixaMassa(){if(!exigirPermissao('mensalidades_admin','dar baixa em massa'))return;
   const ids=_idsBaixaMassa;
   if(!ids||!ids.length){alert('Nenhuma mensalidade selecionada.');return;}
   const data=document.getElementById('bxDataMassa').value;
@@ -1219,7 +1344,7 @@ function migrarTrabalhadores(){
   });
   if(alterou)salvarDB();
 }
-function gerarMes(){
+function gerarMes(){if(!exigirPermissao('mensalidades_operar','gerar mensalidades'))return;
   const mes=filtroMes,ano=filtroAno;
   const ativos=trabsValidosParaPeriodo(mes,ano);
   const isentosPermanentes=ativos.filter(t=>trabIsentoNoPeriodo(t,mes,ano));
@@ -1245,7 +1370,7 @@ function gerarMes(){
 
 // Reverte a ação "Gerar mês" para o período selecionado.
 // Exclui todas as mensalidades do mês e remove receitas vinculadas às que já foram pagas.
-function abrirExcluirMesMensalidades(){if(!exigirSupremo('excluir todas as mensalidades do mês'))return;
+function abrirExcluirMesMensalidades(){if(!exigirPermissao('mensalidades_admin','excluir todas as mensalidades do mês'))return;
   const mes=filtroMes,ano=filtroAno;
   const mensalidadesMes=db.mensalidades.filter(m=>m.mes===mes&&m.ano===ano);
   if(!mensalidadesMes.length){
@@ -1279,7 +1404,7 @@ function abrirExcluirMesMensalidades(){if(!exigirSupremo('excluir todas as mensa
   );
 }
 
-async function excluirMesMensalidades(){if(!exigirSupremo('excluir todas as mensalidades do mês'))return;
+async function excluirMesMensalidades(){if(!exigirPermissao('mensalidades_admin','excluir todas as mensalidades do mês'))return;
   const confirmacao=document.getElementById('confirmarExcluirMesMens');
   if(!confirmacao||!confirmacao.checked){
     alert('Marque a confirmação antes de excluir as mensalidades do mês.');
@@ -1318,13 +1443,13 @@ async function excluirMesMensalidades(){if(!exigirSupremo('excluir todas as mens
   );
 }
 
-function darBaixa(id){
+function darBaixa(id){if(!exigirPermissao('mensalidades_operar','dar baixa em mensalidades'))return;
   const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
   if(m.status==='isento'){alert('Este trabalhador está isento no mês de entrada e não pode ter baixa registrada.');return;}
   const t=db.trabalhadores.find(x=>x.id===m.trabalhadorId)||{};
   openModal('Dar baixa - '+t.nome,'<div class="alert alert-amarelo">&#128176; Valor: '+fmt(m.valor)+' - '+mesNome(m.mes)+'/'+m.ano+'</div><div class="form-group"><label class="form-label">Data do pagamento</label><input type="date" class="form-control" id="bxData" value="'+hoje()+'"></div><div class="form-group"><label class="form-label">Forma de pagamento</label><select class="form-control" id="bxForma"><option>PIX</option><option>Dinheiro</option><option>Transferencia</option><option>Cartao</option></select></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarBaixa(\''+id+'\')">&#10003; Confirmar pagamento</button>');
 }
-function confirmarBaixa(id){
+function confirmarBaixa(id){if(!exigirPermissao('mensalidades_operar','confirmar pagamentos'))return;
   const m=db.mensalidades.find(x=>x.id===id);if(!m)return;
   if(m.status==='isento'){alert('Mensalidade isenta não pode ser baixada.');return;}
   if(m.status==='pago'){alert('Esta mensalidade já está paga.');return;}
@@ -1361,14 +1486,14 @@ function removerLancamentoDaMensalidade(m){
   m.dataPagamento=null;
   m.lancamentoId=null;
 }
-function estornar(id){if(!exigirSupremo('estornar pagamentos'))return;
+function estornar(id){if(!exigirPermissao('mensalidades_admin','estornar pagamentos'))return;
   confirmar('Estornar este pagamento?',()=>{
     const m=db.mensalidades.find(x=>x.id===id);if(!m||m.status!=='pago')return;
     removerLancamentoDaMensalidade(m);
     salvarDB();renderMens();
   });
 }
-function estornoMassa(){if(!exigirSupremo('estornar pagamentos em massa'))return;
+function estornoMassa(){if(!exigirPermissao('mensalidades_admin','estornar pagamentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-mens:checked')].map(c=>c.dataset.id);
   const pagas=ids.map(id=>db.mensalidades.find(m=>m.id===id)).filter(m=>m&&m.status==='pago');
   if(!pagas.length){alert('Nenhuma mensalidade paga foi selecionada.');return;}
@@ -1393,7 +1518,7 @@ function origemDoLancamento(id){
 // LANCAMENTOS
 function setFiltroTipoLanc(v){filtroTipoLanc=v;renderLanc();}
 function pgLancamentos(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'lancamento\',\'Histórico de lançamentos\')">&#128337; Histórico geral</button>')+'<button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somentePermissao('auditoria_visualizar','<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'lancamento\',\'Histórico de lançamentos\')">&#128337; Histórico geral</button>')+somentePermissao('lancamentos_operar','<button class="btn btn-outline" onclick="abrirNovoLanc(\'despesa\')">- Despesa</button><button class="btn btn-primary" onclick="abrirNovoLanc(\'receita\')">+ Receita</button>')+'</div>';
   renderLanc();
 }
 function renderLanc(){
@@ -1407,17 +1532,17 @@ function renderLanc(){
     ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#128218;</div><p>Nenhum lancamento em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
     :lista.map(l=>{
       const origem=origemDoLancamento(l.id);
-      const cb=!isSupremo()?'—':(origem
+      const cb=!temPermissao('lancamentos_admin')?'—':(origem
         ?'<input type="checkbox" class="cb-select cb-lanc" disabled title="Lançamento automático: altere no módulo '+escapeAttr(origem.tipo)+'">'
         :'<input type="checkbox" class="cb-select cb-lanc" data-id="'+l.id+'" onchange="atualizarBulkLanc()" title="Selecionar lançamento manual">');
-      const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'lancamento\',\''+l.id+'\',\''+escapeAttr(l.descricao||'Lançamento')+'\')">&#128337;</button>');
-      const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir lançamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button>');
-      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar lançamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></td></tr>';
+      const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'lancamento\',\''+l.id+'\',\''+escapeAttr(l.descricao||'Lançamento')+'\')">&#128337;</button>');
+      const excluir=somentePermissao('lancamentos_admin','<button class="btn btn-sm btn-ghost" title="Excluir lançamento" onclick="excluirLanc(\''+l.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+      return '<tr><td>'+cb+'</td><td>'+fmtData(l.data)+'</td><td>'+escapeHTML(l.descricao)+'</td><td><span class="badge '+(l.tipo==='receita'?'badge-verde':'badge-vermelho')+'">'+escapeHTML(l.categoria)+'</span></td><td>'+escapeHTML(l.formaPagamento||'-')+'</td><td class="'+(l.tipo==='receita'?'valor-positivo':'valor-negativo')+'">'+(l.tipo==='receita'?'+':'-')+fmt(l.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+somentePermissao('lancamentos_operar','<button class="btn btn-sm btn-outline" title="Editar lançamento" onclick="editarLanc(\''+l.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>')+excluir+'</div></td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div></div><div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(ent-sai>=0?'positivo':'negativo')+'">'+fmt(ent-sai)+'</div></div></div>'+
-    somenteSupremo('<div id="bulkBarLanc" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountLanc">0 selecionados</span><button class="btn btn-primary btn-sm" onclick="editarMassaLanc()">&#9999;&#65039; Editar categoria/pagamento</button><button class="btn btn-danger btn-sm" onclick="excluirMassaLanc()">&#128465; Excluir selecionados</button><button class="btn btn-ghost btn-sm" onclick="limparSelLanc()">&#10005; Limpar seleção</button></div>')+
-    '<div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosLanc" onchange="toggleTodosLanc(this)" title="Selecionar lançamentos manuais">':'—')+'</th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+    somentePermissao('lancamentos_admin','<div id="bulkBarLanc" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountLanc">0 selecionados</span><button class="btn btn-primary btn-sm" onclick="editarMassaLanc()">&#9999;&#65039; Editar categoria/pagamento</button><button class="btn btn-danger btn-sm" onclick="excluirMassaLanc()">&#128465; Excluir selecionados</button><button class="btn btn-ghost btn-sm" onclick="limparSelLanc()">&#10005; Limpar seleção</button></div>')+
+    '<div class="card"><div class="section-header"><div class="chip-group" style="margin:0;"><button class="chip '+(filtroTipoLanc==='todos'?'active':'')+'" onclick="setFiltroTipoLanc(\'todos\')">Todos</button><button class="chip '+(filtroTipoLanc==='receita'?'active':'')+'" onclick="setFiltroTipoLanc(\'receita\')">Receitas</button><button class="chip '+(filtroTipoLanc==='despesa'?'active':'')+'" onclick="setFiltroTipoLanc(\'despesa\')">Despesas</button></div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(temPermissao('lancamentos_admin')?'<input type="checkbox" class="cb-select" id="cbTodosLanc" onchange="toggleTodosLanc(this)" title="Selecionar lançamentos manuais">':'—')+'</th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function atualizarBulkLanc(){
   const cbs=[...document.querySelectorAll('.cb-lanc:checked')];
@@ -1429,7 +1554,7 @@ function atualizarBulkLanc(){
   const cbH=document.getElementById('cbTodosLanc');
   if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
 }
-function toggleTodosLanc(cbH){if(!isSupremo())return;
+function toggleTodosLanc(cbH){if(!temPermissao('lancamentos_admin'))return;
   document.querySelectorAll('.cb-lanc:not(:disabled)').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkLanc();
 }
@@ -1440,7 +1565,7 @@ function limparSelLanc(){
   atualizarBulkLanc();
 }
 let _idsEditMassaLanc=[];
-function editarMassaLanc(){if(!exigirSupremo('editar lançamentos em massa'))return;
+function editarMassaLanc(){if(!exigirPermissao('lancamentos_admin','editar lançamentos em massa'))return;
   _idsEditMassaLanc=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
   if(!_idsEditMassaLanc.length){alert('Selecione pelo menos um lançamento manual.');return;}
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
@@ -1453,7 +1578,7 @@ function editarMassaLanc(){if(!exigirSupremo('editar lançamentos em massa'))ret
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmarEditMassaLanc()">&#10003; Aplicar alterações</button>'
   );
 }
-function confirmarEditMassaLanc(){if(!exigirSupremo('editar lançamentos em massa'))return;
+function confirmarEditMassaLanc(){if(!exigirPermissao('lancamentos_admin','editar lançamentos em massa'))return;
   const categoria=document.getElementById('massaLancCat').value;
   const forma=document.getElementById('massaLancForma').value;
   if(!categoria&&!forma){alert('Escolha pelo menos uma alteração.');return;}
@@ -1469,7 +1594,7 @@ function confirmarEditMassaLanc(){if(!exigirSupremo('editar lançamentos em mass
   salvarDB();closeModal();renderLanc();
   alert(alterados+' lançamento(s) atualizado(s).');
 }
-function excluirMassaLanc(){if(!exigirSupremo('excluir lançamentos em massa'))return;
+function excluirMassaLanc(){if(!exigirPermissao('lancamentos_admin','excluir lançamentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-lanc:checked')].map(c=>c.dataset.id).filter(id=>id&&!origemDoLancamento(id));
   if(!ids.length){alert('Selecione pelo menos um lançamento manual.');return;}
   confirmar('Excluir permanentemente '+ids.length+' lançamento(s) manual(is)?',()=>{
@@ -1480,7 +1605,7 @@ function excluirMassaLanc(){if(!exigirSupremo('excluir lançamentos em massa'))r
   });
 }
 
-function abrirNovoLanc(tipo){
+function abrirNovoLanc(tipo){if(!exigirPermissao('lancamentos_operar','criar lançamentos'))return;
   const cats=['Mensalidade','Cantina','Rifa','Doacao','Curso','Material','Manutencao','Agua/Luz','Outros'];
   const formas=['Dinheiro','PIX','Transferencia','Cartao','Cheque'];
   // data padrão: último dia do mês do período global ativo (ou hoje se for o mês atual)
@@ -1511,7 +1636,7 @@ function abrirNovoLanc(tipo){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc()">Salvar</button>'
   );
 }
-function salvarLanc(editId){
+function salvarLanc(editId){if(!exigirPermissao('lancamentos_operar','salvar lançamentos'))return;
   const tipo=document.getElementById('lTipo').value;
   const data=document.getElementById('lData').value;
   const desc=document.getElementById('lDesc').value.trim();
@@ -1536,7 +1661,7 @@ function salvarLanc(editId){
   if(pages[paginaAtual])pages[paginaAtual]();
   else pgDashboard();
 }
-function editarLanc(id){
+function editarLanc(id){if(!exigirPermissao('lancamentos_operar','editar lançamentos'))return;
   const origem=origemDoLancamento(id);
   if(origem){
     alert('Este lançamento foi gerado por '+origem.tipo+' e deve ser editado na área de origem para manter os dados sincronizados.');
@@ -1566,7 +1691,7 @@ function editarLanc(id){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarLanc(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function excluirLanc(id){if(!exigirSupremo('excluir lançamentos'))return;
+function excluirLanc(id){if(!exigirPermissao('lancamentos_admin','excluir lançamentos'))return;
   const origem=origemDoLancamento(id);
   if(origem){
     alert('Este lançamento foi gerado por '+origem.tipo+' e deve ser excluído ou estornado na área de origem.');
@@ -1580,7 +1705,7 @@ function excluirLanc(id){if(!exigirSupremo('excluir lançamentos'))return;
 
 // TRABALHADORES
 function pgTrabalhadores(){
-  document.getElementById('topbarActions').innerHTML=somenteSupremo('<button class="btn btn-primary" onclick="novoTrab()">+ Trabalhador</button>');
+  document.getElementById('topbarActions').innerHTML=somentePermissao('trabalhadores_gerenciar','<button class="btn btn-primary" onclick="novoTrab()">+ Trabalhador</button>');
   renderTrabs();
 }
 function renderTrabs(){
@@ -1603,8 +1728,8 @@ function renderTrabs(){
         ?' <span class="badge badge-amarelo" title="Motivo da isenção">Isento · '+escapeHTML(isencaoPeriodo.tag||'Sem justificativa')+'</span>'
         :'';
       const rowStyle=!existeNoPeriodo?'opacity:0.45;':'';
-      const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()">':'—';
-      const acoes=somenteSupremo('<button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button>');
+      const seletor=temPermissao('trabalhadores_gerenciar')?'<input type="checkbox" class="cb-select cb-trab" data-id="'+t.id+'" onchange="atualizarBulkTrabs()">':'—';
+      const acoes=somentePermissao('trabalhadores_gerenciar','<button class="btn btn-sm btn-ghost" onclick="editTrab(\''+t.id+'\')">&#9999;</button> <button class="btn btn-sm btn-ghost" onclick="delTrab(\''+t.id+'\')">&#128465;</button>');
       return '<tr style="'+rowStyle+'"><td>'+seletor+'</td><td><strong>'+escapeHTML(t.nome)+'</strong>'+(t.apelido?'<br><span class="text-muted">'+escapeHTML(t.apelido)+'</span>':'')+'</td><td>'+escapeHTML(t.telefone||'-')+'</td><td>'+fmt(t.valorMensalidade)+'</td><td>'+fmtData(t.dataIngresso)+'</td><td>'+badge+badgeIsencao+(validoNoPeriodo?' <span class="badge badge-azul" style="font-size:10px;">'+mesNome(mes)+'/'+ano+'</span>':'')+'</td><td>'+acoes+'</td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
@@ -1615,7 +1740,7 @@ function renderTrabs(){
       '<div class="metric"><div class="metric-label">Válidos em '+mesNome(mes)+'/'+ano+'</div><div class="metric-value positivo">'+validosNoPeriodo.length+'</div></div>'+
       '<div class="metric"><div class="metric-label">Mensalidade média</div><div class="metric-value neutro">'+fmt(cobraveisNoPeriodo.length?cobraveisNoPeriodo.reduce((a,t)=>a+t.valorMensalidade,0)/cobraveisNoPeriodo.length:0)+'</div><div class="metric-sub">Somente trabalhadores cobrados</div></div>'+
     '</div>'+
-    somenteSupremo('<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
+    somentePermissao('trabalhadores_gerenciar','<div id="bulkBarTrabs" style="display:none;" class="bulk-bar">'+
       '<span class="bulk-bar-count" id="bulkCountTrabs">0 selecionados</span>'+
       '<button class="btn btn-primary btn-sm" onclick="alterarStatusMassaTrabs(true)">&#10003; Ativar</button>'+
       '<button class="btn btn-danger btn-sm" onclick="alterarStatusMassaTrabs(false)">&#10005; Inativar</button>'+
@@ -1624,7 +1749,7 @@ function renderTrabs(){
     '</div>')+
     '<div class="card"><div class="section-header"><div class="section-title">Todos os trabalhadores</div></div>'+
     '<div class="table-wrap"><table><thead><tr>'+
-      '<th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos">':'—')+'</th>'+
+      '<th style="width:32px;">'+(temPermissao('trabalhadores_gerenciar')?'<input type="checkbox" class="cb-select" id="cbTodosTrabs" onchange="toggleTodosTrabs(this)" title="Selecionar todos">':'—')+'</th>'+
       '<th>Nome</th><th>Telefone</th><th>Mensalidade</th><th>Ingresso</th><th>Status no período</th><th>Ações</th>'+
     '</tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
@@ -1638,7 +1763,7 @@ function atualizarBulkTrabs(){
   const cbH=document.getElementById('cbTodosTrabs');
   if(cbH)cbH.checked=todos.length>0&&todos.every(c=>c.checked);
 }
-function toggleTodosTrabs(cbH){if(!isSupremo())return;
+function toggleTodosTrabs(cbH){if(!temPermissao('trabalhadores_gerenciar'))return;
   document.querySelectorAll('.cb-trab').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkTrabs();
 }
@@ -1648,7 +1773,7 @@ function limparSelTrabs(){
   if(cbH)cbH.checked=false;
   atualizarBulkTrabs();
 }
-function alterarStatusMassaTrabs(ativo){if(!exigirSupremo('alterar trabalhadores em massa'))return;
+function alterarStatusMassaTrabs(ativo){if(!exigirPermissao('trabalhadores_gerenciar','alterar trabalhadores em massa'))return;
   const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
   if(!ids.length){alert('Selecione pelo menos um trabalhador.');return;}
   const acao=ativo?'ativar':'inativar';
@@ -1663,7 +1788,7 @@ function alterarStatusMassaTrabs(ativo){if(!exigirSupremo('alterar trabalhadores
   });
 }
 
-function editMassaTrabs(){if(!exigirSupremo('editar trabalhadores em massa'))return;
+function editMassaTrabs(){if(!exigirPermissao('trabalhadores_gerenciar','editar trabalhadores em massa'))return;
   const ids=[...document.querySelectorAll('.cb-trab:checked')].map(c=>c.dataset.id);
   if(!ids.length)return;
   openModal(
@@ -1693,7 +1818,7 @@ function editMassaTrabs(){if(!exigirSupremo('editar trabalhadores em massa'))ret
     }
   },50);
 }
-function confirmarEditMassa(ids){if(!exigirSupremo('editar trabalhadores em massa'))return;
+function confirmarEditMassa(ids){if(!exigirPermissao('trabalhadores_gerenciar','editar trabalhadores em massa'))return;
   const novoValorStr=document.getElementById('massaValor').value.trim();
   const novoStatus=document.getElementById('massaStatus').value;
   const novoValor=novoValorStr!==''?parseFloat(novoValorStr):null;
@@ -1770,9 +1895,9 @@ function alternarCampoIsencaoTrab(){
   if(marcado)document.getElementById('tTagIsencao')?.focus();
 }
 
-function novoTrab(){if(!exigirSupremo('cadastrar trabalhadores'))return;openModal('Novo trabalhador',formTrab({}),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab()">Salvar</button>');}
-function editTrab(id){if(!exigirSupremo('editar trabalhadores'))return;const t=db.trabalhadores.find(x=>x.id===id);if(!t)return;openModal('Editar trabalhador',formTrab(t),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab(\''+id+'\')">Salvar</button>');}
-function salvarTrab(id){if(!exigirSupremo('alterar trabalhadores'))return;
+function novoTrab(){if(!exigirPermissao('trabalhadores_gerenciar','cadastrar trabalhadores'))return;openModal('Novo trabalhador',formTrab({}),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab()">Salvar</button>');}
+function editTrab(id){if(!exigirPermissao('trabalhadores_gerenciar','editar trabalhadores'))return;const t=db.trabalhadores.find(x=>x.id===id);if(!t)return;openModal('Editar trabalhador',formTrab(t),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarTrab(\''+id+'\')">Salvar</button>');}
+function salvarTrab(id){if(!exigirPermissao('trabalhadores_gerenciar','alterar trabalhadores'))return;
   const nome=document.getElementById('tNome').value.trim();
   if(!nome){alert('Informe o nome.');return;}
 
@@ -1916,7 +2041,7 @@ function salvarTrab(id){if(!exigirSupremo('alterar trabalhadores'))return;
   }
 }
 
-function delTrab(id){if(!exigirSupremo('excluir trabalhadores'))return;
+function delTrab(id){if(!exigirPermissao('trabalhadores_gerenciar','excluir trabalhadores'))return;
   const possuiHistorico=db.mensalidades.some(m=>m.trabalhadorId===id);
   if(possuiHistorico){
     alert('Este trabalhador possui histórico de mensalidades e não pode ser excluído. Marque-o como inativo para preservar os relatórios.');
@@ -1927,7 +2052,7 @@ function delTrab(id){if(!exigirSupremo('excluir trabalhadores'))return;
 
 // CANTINA
 function pgCantina(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'cantina\',\'Histórico da cantina\')">&#128337; Histórico geral</button>')+'<button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somentePermissao('auditoria_visualizar','<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'cantina\',\'Histórico da cantina\')">&#128337; Histórico geral</button>')+somentePermissao('cantina_operar','<button class="btn btn-primary" onclick="novaCantina()">+ Movimento</button>')+'</div>';
   renderCantina();
 }
 function formaPagamentoCantina(item){
@@ -1944,15 +2069,15 @@ function renderCantina(){
   const lin=lista.length===0
     ?'<tr><td colspan="7"><div class="empty"><div class="empty-icon">&#127859;</div><p>Nenhum movimento na cantina em '+mesNome(mes)+'/'+ano+'</p></div></td></tr>'
     :lista.map(c=>{
-      const seletor=isSupremo()?'<input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento">':'—';
-      const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'cantina\',\''+c.id+'\',\''+escapeAttr(c.descricao||'Movimento da cantina')+'\')">&#128337;</button>');
-      const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button>');
-      return '<tr><td>'+seletor+'</td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td>'+escapeHTML(formaPagamentoCantina(c))+'</td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></td></tr>';
+      const seletor=temPermissao('cantina_admin')?'<input type="checkbox" class="cb-select cb-cantina" data-id="'+c.id+'" onchange="atualizarBulkCantina()" title="Selecionar movimento">':'—';
+      const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'cantina\',\''+c.id+'\',\''+escapeAttr(c.descricao||'Movimento da cantina')+'\')">&#128337;</button>');
+      const excluir=somentePermissao('cantina_admin','<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delCantina(\''+c.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+      return '<tr><td>'+seletor+'</td><td>'+fmtData(c.data)+'</td><td>'+escapeHTML(c.descricao)+'</td><td><span class="badge '+(c.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(c.tipo==='entrada'?'Entrada':'Custo')+'</span></td><td>'+escapeHTML(formaPagamentoCantina(c))+'</td><td class="'+(c.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(c.tipo==='entrada'?'+':'-')+fmt(c.valor)+'</td><td><div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">'+historico+somentePermissao('cantina_operar','<button class="btn btn-sm btn-outline" title="Editar" onclick="editarCantina(\''+c.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>')+excluir+'</div></td></tr>';
     }).join('');
   document.getElementById('pageContent').innerHTML=
     '<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Receitas</div><div class="metric-value positivo">'+fmt(rec)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Custos</div><div class="metric-value negativo">'+fmt(cus)+'</div><div class="metric-sub">'+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Resultado</div><div class="metric-value '+(rec-cus>=0?'positivo':'negativo')+'">'+fmt(rec-cus)+'</div></div></div>'+
-    somenteSupremo('<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>')+
-    '<div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(isSupremo()?'<input type="checkbox" class="cb-select" id="cbTodosCantina" onchange="toggleTodosCantina(this)" title="Selecionar todos os movimentos">':'—')+'</th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
+    somentePermissao('cantina_admin','<div id="bulkBarCantina" style="display:none;" class="bulk-bar"><span class="bulk-bar-count" id="bulkCountCantina">0 selecionados</span><button class="btn btn-danger btn-sm" onclick="excluirMassaCantina()">&#128465; Excluir movimentos</button><button class="btn btn-ghost btn-sm" onclick="limparSelCantina()">&#10005; Limpar seleção</button></div>')+
+    '<div class="card"><div class="section-header"><div class="section-title">Movimentos da cantina - '+mesNome(mes)+'/'+ano+'</div></div><div class="table-wrap"><table><thead><tr><th style="width:32px;">'+(temPermissao('cantina_admin')?'<input type="checkbox" class="cb-select" id="cbTodosCantina" onchange="toggleTodosCantina(this)" title="Selecionar todos os movimentos">':'—')+'</th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>'+lin+'</tbody></table></div></div></div>';
 }
 function atualizarBulkCantina(){
   const cbs=[...document.querySelectorAll('.cb-cantina:checked')];
@@ -1964,7 +2089,7 @@ function atualizarBulkCantina(){
   const cbH=document.getElementById('cbTodosCantina');
   if(cbH){cbH.checked=todos.length>0&&todos.every(c=>c.checked);cbH.indeterminate=cbs.length>0&&!cbH.checked;}
 }
-function toggleTodosCantina(cbH){if(!isSupremo())return;
+function toggleTodosCantina(cbH){if(!temPermissao('cantina_admin'))return;
   document.querySelectorAll('.cb-cantina').forEach(c=>{c.checked=cbH.checked;});
   atualizarBulkCantina();
 }
@@ -1974,7 +2099,7 @@ function limparSelCantina(){
   if(cbH){cbH.checked=false;cbH.indeterminate=false;}
   atualizarBulkCantina();
 }
-function excluirMassaCantina(){if(!exigirSupremo('excluir movimentos em massa'))return;
+function excluirMassaCantina(){if(!exigirPermissao('cantina_admin','excluir movimentos em massa'))return;
   const ids=[...document.querySelectorAll('.cb-cantina:checked')].map(c=>c.dataset.id);
   if(!ids.length){alert('Selecione pelo menos um movimento da cantina.');return;}
   confirmar('Excluir '+ids.length+' movimento(s) da cantina? Os lançamentos financeiros vinculados também serão removidos.',()=>{
@@ -1987,7 +2112,7 @@ function excluirMassaCantina(){if(!exigirSupremo('excluir movimentos em massa'))
   });
 }
 
-function novaCantina(){
+function novaCantina(){if(!exigirPermissao('cantina_operar','criar movimentos da cantina'))return;
   const agora=new Date();
   const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
   const formas=['Dinheiro','PIX','Transferência','Cartão','Cheque','Outro'];
@@ -1998,7 +2123,7 @@ function novaCantina(){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina()">Salvar</button>'
   );
 }
-function salvarCantina(editId){
+function salvarCantina(editId){if(!exigirPermissao('cantina_operar','salvar movimentos da cantina'))return;
   const tipo=document.getElementById('cTipo').value;
   const data=document.getElementById('cData').value;
   const desc=document.getElementById('cDesc').value.trim();
@@ -2028,7 +2153,7 @@ function salvarCantina(editId){
   }
   salvarDB();closeModal();renderCantina();
 }
-function editarCantina(id){
+function editarCantina(id){if(!exigirPermissao('cantina_operar','editar movimentos da cantina'))return;
   const c=db.cantina.find(x=>x.id===id);if(!c)return;
   const formas=['Dinheiro','PIX','Transferência','Cartão','Cheque','Outro'];
   const formaAtual=formaPagamentoCantina(c)==='-'?'Dinheiro':formaPagamentoCantina(c);
@@ -2045,7 +2170,7 @@ function editarCantina(id){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarCantina(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function delCantina(id){if(!exigirSupremo('excluir movimentos da cantina'))return;confirmar('Excluir este movimento?',()=>{
+function delCantina(id){if(!exigirPermissao('cantina_admin','excluir movimentos da cantina'))return;confirmar('Excluir este movimento?',()=>{
   const item=db.cantina.find(c=>c.id===id);
   if(item&&item.lancamentoId){db.lancamentos=db.lancamentos.filter(l=>l.id!==item.lancamentoId);}
   db.cantina=db.cantina.filter(c=>c.id!==id);
@@ -2054,7 +2179,7 @@ function delCantina(id){if(!exigirSupremo('excluir movimentos da cantina'))retur
 
 // RIFAS
 function pgRifas(){
-  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somenteSupremo('<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'rifa\',\'Histórico de rifas e eventos\')">&#128337; Histórico geral</button>')+'<button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button></div>';
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somentePermissao('auditoria_visualizar','<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'rifa\',\'Histórico de rifas e eventos\')">&#128337; Histórico geral</button>')+somentePermissao('rifas_operar','<button class="btn btn-primary" onclick="novaRifa()">+ Nova rifa/evento</button>')+'</div>';
   renderRifas();
 }
 function renderRifas(){
@@ -2066,18 +2191,18 @@ function renderRifas(){
   const totRes=totArr-totCus;
   let cards=lista.length===0?'<div class="empty"><div class="empty-icon">&#127903;</div><p>Nenhuma rifa ou evento em '+mesNome(mes)+'/'+ano+'</p></div>':lista.map(r=>{
     const res=r.arrecadado-r.custo;
-    const historico=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'rifa\',\''+r.id+'\',\''+escapeAttr(r.nome||'Rifa/evento')+'\')">&#128337;</button>');
-    const excluir=somenteSupremo('<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button>');
-    return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;">'+historico+'<button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>'+excluir+'</div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';
+    const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'rifa\',\''+r.id+'\',\''+escapeAttr(r.nome||'Rifa/evento')+'\')">&#128337;</button>');
+    const excluir=somentePermissao('rifas_admin','<button class="btn btn-sm btn-ghost" title="Excluir" onclick="delRifa(\''+r.id+'\')" style="padding:5px 10px;">&#128465;</button>');
+    return '<div class="card card-sm mb-4"><div class="flex justify-between items-center mb-4"><div><div style="font-weight:500;font-size:15px;">'+escapeHTML(r.nome)+'</div><div class="text-muted">'+fmtData(r.data)+' - <span class="badge badge-azul">'+escapeHTML(r.tipo)+'</span></div></div><div style="display:flex;gap:6px;">'+historico+somentePermissao('rifas_operar','<button class="btn btn-sm btn-outline" title="Editar" onclick="editarRifa(\''+r.id+'\')" style="padding:5px 10px;color:var(--verde);border-color:var(--verde);">&#9999;&#65039;</button>')+excluir+'</div></div><div class="grid-3" style="gap:8px;text-align:center;"><div style="background:var(--verde-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--verde);font-weight:600;">'+fmt(r.arrecadado)+'</div><div class="text-muted" style="font-size:11px;">Arrecadado</div></div><div style="background:var(--vermelho-bg);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:var(--vermelho);font-weight:600;">'+fmt(r.custo)+'</div><div class="text-muted" style="font-size:11px;">Custo</div></div><div style="background:'+(res>=0?'var(--verde-bg)':'var(--vermelho-bg)')+';padding:10px;border-radius:var(--radius-sm);"><div style="font-size:13px;color:'+(res>=0?'var(--verde)':'var(--vermelho)')+';font-weight:600;">'+fmt(res)+'</div><div class="text-muted" style="font-size:11px;">Resultado</div></div></div></div>';
   }).join('');
   document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-3 mb-6"><div class="metric"><div class="metric-label">Total arrecadado</div><div class="metric-value positivo">'+fmt(totArr)+'</div><div class="metric-sub">'+lista.length+' evento(s) em '+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Total de custos</div><div class="metric-value negativo">'+fmt(totCus)+'</div></div><div class="metric"><div class="metric-label">Resultado geral</div><div class="metric-value '+(totRes>=0?'positivo':'negativo')+'">'+fmt(totRes)+'</div></div></div>'+cards+'</div>';
 }
-function novaRifa(){
+function novaRifa(){if(!exigirPermissao('rifas_operar','criar rifas e eventos'))return;
   const agora=new Date();
   const dataDefault=(filtroMes===agora.getMonth()+1&&filtroAno===agora.getFullYear())?hoje():String(filtroAno)+'-'+String(filtroMes).padStart(2,'0')+'-01';
   openModal('Nova rifa / evento','<div class="form-group"><label class="form-label">Nome</label><input type="text" class="form-control" id="rNome" placeholder="Ex: Rifa junina..."></div><div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-control" id="rTipo"><option>Rifa</option><option>Evento</option><option>Bingo</option><option>Gincana</option><option>Outro</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="rData" value="'+dataDefault+'"></div></div><div class="form-row"><div class="form-group"><label class="form-label">Total arrecadado (R$)</label><input type="number" class="form-control" id="rArr" min="0" step="0.01" placeholder="0,00"></div><div class="form-group"><label class="form-label">Custo total (R$)</label><input type="number" class="form-control" id="rCus" min="0" step="0.01" placeholder="0,00"></div></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa()">Salvar</button>');
 }
-function salvarRifa(editId){
+function salvarRifa(editId){if(!exigirPermissao('rifas_operar','salvar rifas e eventos'))return;
   const nome=document.getElementById('rNome').value.trim();
   const tipo=document.getElementById('rTipo').value;
   const data=document.getElementById('rData').value;
@@ -2126,7 +2251,7 @@ function salvarRifa(editId){
   }
   salvarDB();closeModal();renderRifas();
 }
-function editarRifa(id){
+function editarRifa(id){if(!exigirPermissao('rifas_operar','editar rifas e eventos'))return;
   const r=db.rifas.find(x=>x.id===id);if(!r)return;
   const tipos=['Rifa','Evento','Bingo','Gincana','Outro'];
   openModal(
@@ -2140,7 +2265,7 @@ function editarRifa(id){
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarRifa(\'' + id + '\')">&#10003; Salvar alterações</button>'
   );
 }
-function delRifa(id){if(!exigirSupremo('excluir rifas e eventos'))return;confirmar('Excluir esta rifa/evento?',()=>{
+function delRifa(id){if(!exigirPermissao('rifas_admin','excluir rifas e eventos'))return;confirmar('Excluir esta rifa/evento?',()=>{
   const rifa=db.rifas.find(r=>r.id===id);
   if(rifa){
     if(rifa.lancamentoArrId)db.lancamentos=db.lancamentos.filter(l=>l.id!==rifa.lancamentoArrId);
@@ -2149,6 +2274,126 @@ function delRifa(id){if(!exigirSupremo('excluir rifas e eventos'))return;confirm
   db.rifas=db.rifas.filter(r=>r.id!==id);
   salvarDB();renderRifas();
 });}
+
+
+// CONFIGURAÇÕES DE ACESSO — SOMENTE SUPREMO
+function permissoesEfetivasUsuario(usuario){
+  const salvas=usuario?.permissoes&&typeof usuario.permissoes==='object'?usuario.permissoes:{};
+  return Object.fromEntries(Object.keys(PERMISSOES_PADRAO_USUARIO).map(chave=>[
+    chave,Object.prototype.hasOwnProperty.call(salvas,chave)?salvas[chave]===true:PERMISSOES_PADRAO_USUARIO[chave]===true
+  ]));
+}
+function pgConfiguracoes(){
+  if(!exigirSupremo('abrir as configurações de acesso')){navigate('dashboard');return;}
+  document.getElementById('topbarActions').innerHTML='';
+  document.getElementById('pageContent').innerHTML=
+    '<div class="page">'+
+      '<div class="card config-intro">'+
+        '<div class="section-title" style="margin-bottom:8px;">Permissões dos usuários</div>'+
+        '<p class="text-muted" style="line-height:1.55;">Ative ou desative as ações permitidas para cada login. As alterações são salvas imediatamente e passam a valer em tempo real. O acesso Supremo sempre possui todas as permissões.</p>'+
+        '<div class="alert alert-amarelo" style="margin-top:16px;margin-bottom:0;">Usuários criados no Firebase Authentication aparecem aqui depois do primeiro login no sistema.</div>'+
+      '</div>'+
+      '<div id="configUsuariosStatus" class="alert alert-azul" style="background:var(--azul-bg);color:var(--azul);">Carregando usuários...</div>'+
+      '<div class="config-users" id="configUsuariosLista"></div>'+
+    '</div>';
+  if(_pararEscutaUsuariosConfig){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
+  _pararEscutaUsuariosConfig=onValue(usuariosAcessosRef,snapshot=>{
+    _usuariosConfigCache=snapshot.val()||{};
+    renderUsuariosConfiguracao();
+  },erro=>{
+    console.error('Falha ao carregar usuários:',erro);
+    document.getElementById('configUsuariosStatus').className='alert alert-vermelho';
+    document.getElementById('configUsuariosStatus').textContent='Não foi possível carregar os usuários. Confirme as regras do Firebase.';
+  });
+}
+function renderUsuariosConfiguracao(){
+  const lista=document.getElementById('configUsuariosLista');
+  const status=document.getElementById('configUsuariosStatus');
+  if(!lista||!status)return;
+  const usuarios=Object.entries(_usuariosConfigCache).map(([uid,dados])=>({uid,...(dados||{})})).sort((a,b)=>{
+    if(a.perfil==='supremo'&&b.perfil!=='supremo')return-1;
+    if(b.perfil==='supremo'&&a.perfil!=='supremo')return 1;
+    return String(a.nome||a.email||'').localeCompare(String(b.nome||b.email||''),'pt-BR');
+  });
+  status.textContent=usuarios.length+' acesso(s) cadastrado(s).';
+  status.className='alert alert-verde';
+  if(!usuarios.length){lista.innerHTML='<div class="card empty">Nenhum usuário cadastrado.</div>';return;}
+  lista.innerHTML=usuarios.map(usuario=>{
+    const proprio=usuario.uid===firebaseAuth.currentUser?.uid;
+    const supremo=String(usuario.perfil||'').trim().toLowerCase()==='supremo';
+    const bloqueado=usuario.ativo===false;
+    const permissoes=permissoesEfetivasUsuario(usuario);
+    const switches=DEFINICOES_PERMISSOES.map(def=>
+      '<div class="permission-row">'+
+        '<div class="permission-copy"><div class="permission-title">'+escapeHTML(def.titulo)+'</div><div class="permission-desc">'+escapeHTML(def.desc)+'</div></div>'+
+        '<label class="switch" title="'+escapeAttr(def.titulo)+'">'+
+          '<input type="checkbox" '+(permissoes[def.chave]?'checked ':'')+(supremo?'disabled ':'')+'onchange="alterarPermissaoUsuario(\''+escapeAttr(usuario.uid)+'\',\''+escapeAttr(def.chave)+'\',this.checked,this)">'+
+          '<span class="switch-slider"></span></label>'+
+      '</div>'
+    ).join('');
+    return '<div class="config-user-card" id="config-user-'+escapeAttr(usuario.uid)+'">'+
+      '<div class="config-user-head">'+
+        '<div><div class="config-user-name">'+escapeHTML(usuario.nome||'Usuário sem nome')+(proprio?' <span class="badge badge-azul">Seu acesso</span>':'')+'</div><div class="config-user-email">'+escapeHTML(usuario.email||usuario.uid)+'</div></div>'+
+        '<div class="config-user-actions">'+
+          '<span class="badge '+(supremo?'badge-amarelo':'badge-cinza')+'">'+(supremo?'Supremo':'Usuário')+'</span>'+
+          '<span class="config-status '+(bloqueado?'inativo':'')+'"><span class="config-status-dot"></span>'+(bloqueado?'Bloqueado':'Ativo')+'</span>'+
+          (!supremo&&!proprio?'<label class="switch" title="Ativar ou bloquear acesso"><input type="checkbox" '+(!bloqueado?'checked ':'')+'onchange="alterarStatusUsuario(\''+escapeAttr(usuario.uid)+'\',this.checked,this)"><span class="switch-slider"></span></label>':'')+
+        '</div>'+ 
+      '</div>'+ 
+      (supremo?'<div class="alert alert-verde" style="margin:0;">O perfil Supremo possui todas as permissões e não pode ser limitado nesta tela.</div>':
+        '<div class="config-presets"><span class="text-sm" style="font-weight:600;align-self:center;">Atalhos:</span>'+ 
+          '<button class="btn btn-sm btn-ghost" onclick="aplicarPresetUsuario(\''+escapeAttr(usuario.uid)+'\',\'leitura\')">Somente leitura</button>'+ 
+          '<button class="btn btn-sm btn-outline" onclick="aplicarPresetUsuario(\''+escapeAttr(usuario.uid)+'\',\'operacional\')">Operacional</button>'+ 
+          '<button class="btn btn-sm btn-primary" onclick="aplicarPresetUsuario(\''+escapeAttr(usuario.uid)+'\',\'gestor\')">Gestor completo</button>'+ 
+        '</div><div class="config-permissions">'+switches+'</div><div class="config-saving" id="config-status-'+escapeAttr(usuario.uid)+'"></div>')+
+    '</div>';
+  }).join('');
+}
+async function salvarConfiguracaoUsuario(uid,alteracoes,descricao){
+  if(!exigirSupremo('alterar permissões de usuários'))return false;
+  if(uid===firebaseAuth.currentUser?.uid&&Object.prototype.hasOwnProperty.call(alteracoes,'ativo')&&alteracoes.ativo===false){
+    alert('Você não pode bloquear o próprio acesso Supremo.');return false;
+  }
+  const atualizacoes={};
+  Object.entries(alteracoes).forEach(([caminho,valor])=>{atualizacoes['usuarios_acessos/'+uid+'/'+caminho]=valor;});
+  atualizacoes['usuarios_acessos/'+uid+'/permissoesAtualizadasEm']=Date.now();
+  atualizacoes['usuarios_acessos/'+uid+'/permissoesAtualizadasPor']=firebaseAuth.currentUser?.email||'';
+  const eventoId=uidEventoAuditoria();
+  atualizacoes['auditoria_financeiro/'+eventoId]={
+    id:eventoId,entidade:'configuracao_acesso',registroId:uid,acao:'Permissões alteradas',
+    descricao,ocorridoEm:Date.now(),usuarioUid:firebaseAuth.currentUser?.uid||'',usuarioEmail:firebaseAuth.currentUser?.email||''
+  };
+  await update(raizRef,atualizacoes);
+  return true;
+}
+async function alterarPermissaoUsuario(uid,chave,valor,input){
+  if(!DEFINICOES_PERMISSOES.some(def=>def.chave===chave)){alert('Permissão inválida.');return;}
+  const status=document.getElementById('config-status-'+uid);
+  if(input)input.disabled=true;
+  if(status)status.textContent='Salvando...';
+  try{
+    await salvarConfiguracaoUsuario(uid,{['permissoes/'+chave]:valor},(valor?'Ativou':'Desativou')+' a permissão “'+(DEFINICOES_PERMISSOES.find(d=>d.chave===chave)?.titulo||chave)+'”.');
+    if(status)status.textContent='Permissão atualizada.';
+  }catch(erro){
+    console.error(erro);if(input)input.checked=!valor;if(status)status.textContent='Falha ao salvar.';alert('Não foi possível alterar a permissão. Verifique as regras do Firebase.');
+  }finally{if(input)input.disabled=false;setTimeout(()=>{if(status)status.textContent='';},1800);}
+}
+async function aplicarPresetUsuario(uid,preset){
+  const permissoes=PRESETS_PERMISSOES[preset];
+  if(!permissoes)return;
+  const nome={leitura:'Somente leitura',operacional:'Operacional',gestor:'Gestor completo'}[preset]||preset;
+  if(!confirm('Aplicar o perfil de permissões “'+nome+'” a este usuário?'))return;
+  const alteracoes=Object.fromEntries(Object.entries(permissoes).map(([chave,valor])=>['permissoes/'+chave,valor]));
+  try{await salvarConfiguracaoUsuario(uid,alteracoes,'Aplicou o atalho de permissões “'+nome+'”.');}
+  catch(erro){console.error(erro);alert('Não foi possível aplicar o atalho.');}
+}
+async function alterarStatusUsuario(uid,ativo,input){
+  const usuario=_usuariosConfigCache[uid]||{};
+  const acao=ativo?'reativar':'bloquear';
+  if(!confirm('Deseja '+acao+' o acesso de '+(usuario.nome||usuario.email||'este usuário')+'?')){if(input)input.checked=!ativo;return;}
+  try{await salvarConfiguracaoUsuario(uid,{ativo},(ativo?'Reativou':'Bloqueou')+' o acesso do usuário.');}
+  catch(erro){console.error(erro);if(input)input.checked=!ativo;alert('Não foi possível alterar o status do usuário.');}
+}
 
 // RELATORIOS
 const RELATORIO_SECOES_PADRAO={
@@ -2335,7 +2580,7 @@ function renderPreviaRelatorio(){
   if(relatorioSecoes.observacoes&&relatorioObservacoes)secoes.push('<section class="report-section"><h2 class="report-section-title">Observações</h2><div class="report-notes">'+escapeHTML(relatorioObservacoes).replace(/\n/g,'<br>')+'</div></section>');
   alvo.innerHTML='<header class="report-header"><div class="report-brand">&#9789; Financeiro | TULUCA</div><h1 class="report-title">'+escapeHTML(relatorioTitulo)+'</h1><div class="report-period">'+mesNome(mes)+' de '+ano+'</div><div class="report-generated">Gerado em '+escapeHTML(gerado)+'</div></header>'+secoes.join('');
 }
-function pgRelatorios(){
+function pgRelatorios(){if(!exigirPermissao('relatorios_visualizar','visualizar relatórios'))return;
   const periodoAtual=filtroAno+'-'+String(filtroMes).padStart(2,'0');
   if(relatorioPeriodoEdicao&&relatorioPeriodoEdicao!==periodoAtual)relatorioObservacoes='';
   relatorioPeriodoEdicao=periodoAtual;
@@ -2398,14 +2643,14 @@ Object.assign(window,{
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabIsentoNoPeriodo,trabElegivelParaCobranca,trabsValidosParaPeriodo,trabsElegiveisParaCobranca,migrarTrabalhadores,
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
-  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
+  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,pgConfiguracoes,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,abrirExcluirMesMensalidades,excluirMesMensalidades,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
-  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,
+  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
 });
 
 async function init(){
@@ -2445,6 +2690,7 @@ onAuthStateChanged(firebaseAuth,async user=>{
     try{
       mostrarMensagemAuth('');
       await carregarPerfilAcesso(user);
+      iniciarEscutaPerfilAcesso(user);
       mostrarAplicativo(user);
       await init();
     }catch(erro){
