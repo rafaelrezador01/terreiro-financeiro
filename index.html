@@ -3161,18 +3161,18 @@ function renderUsuariosConfiguracao(){
     '</div>';
   }).join('');
 }
-async function salvarConfiguracaoUsuario(uid,alteracoes,descricao){
+async function salvarConfiguracaoUsuario(uidUsuario,alteracoes,descricao){
   if(!exigirSupremo('alterar permissões de usuários'))return false;
-  if(uid===firebaseAuth.currentUser?.uid&&Object.prototype.hasOwnProperty.call(alteracoes,'ativo')&&alteracoes.ativo===false){
+  if(uidUsuario===firebaseAuth.currentUser?.uid&&Object.prototype.hasOwnProperty.call(alteracoes,'ativo')&&alteracoes.ativo===false){
     alert('Você não pode bloquear o próprio acesso Supremo.');return false;
   }
   const atualizacoes={};
-  Object.entries(alteracoes).forEach(([caminho,valor])=>{atualizacoes['usuarios_acessos/'+uid+'/'+caminho]=valor;});
-  atualizacoes['usuarios_acessos/'+uid+'/permissoesAtualizadasEm']=Date.now();
-  atualizacoes['usuarios_acessos/'+uid+'/permissoesAtualizadasPor']=firebaseAuth.currentUser?.email||'';
-  const eventoId=uidEventoAuditoria();
+  Object.entries(alteracoes).forEach(([caminho,valor])=>{atualizacoes['usuarios_acessos/'+uidUsuario+'/'+caminho]=valor;});
+  atualizacoes['usuarios_acessos/'+uidUsuario+'/permissoesAtualizadasEm']=Date.now();
+  atualizacoes['usuarios_acessos/'+uidUsuario+'/permissoesAtualizadasPor']=firebaseAuth.currentUser?.email||'';
+  const eventoId=uid();
   atualizacoes['auditoria_financeiro/'+eventoId]={
-    id:eventoId,entidade:'configuracao_acesso',registroId:uid,acao:'Permissões alteradas',
+    id:eventoId,entidade:'configuracao_acesso',registroId:uidUsuario,acao:'Permissões alteradas',
     descricao,ocorridoEm:Date.now(),usuarioUid:firebaseAuth.currentUser?.uid||'',usuarioEmail:firebaseAuth.currentUser?.email||''
   };
   await update(raizRef,atualizacoes);
