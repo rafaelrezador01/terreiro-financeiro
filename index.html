@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Axe Financeiro - Terreiro</title>
+<title>Axe Financeiro - Terreiro | App Banco</title>
 <meta name="description" content="Sistema interno de gestão financeira do terreiro.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -178,6 +178,23 @@ th .cb-select{accent-color:var(--branco);}
 .report-hidden{display:none!important;}
 .report-table tfoot td{font-weight:600;background:var(--creme);}
 
+/* App Banco — espelho consultivo do extrato OFX */
+.bank-import-card{border:1.5px dashed rgba(45,106,79,.35);background:linear-gradient(135deg,var(--branco),var(--verde-bg));}
+.bank-import-card .section-title{display:flex;align-items:center;gap:9px;}
+.bank-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 190px;gap:10px;align-items:end;margin-bottom:16px;}
+.bank-balance-source{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--texto3);}
+.bank-transaction-desc{max-width:430px;line-height:1.35;overflow-wrap:anywhere;}
+.bank-transaction-id{font-size:11px;color:var(--texto3);font-family:monospace;word-break:break-all;}
+.bank-import-list{display:grid;gap:10px;}
+.bank-import-item{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--creme);}
+.bank-import-meta{font-size:12px;color:var(--texto3);margin-top:5px;line-height:1.45;}
+.bank-file-name{font-weight:600;font-size:14px;overflow-wrap:anywhere;}
+.bank-preview-table{max-height:310px;overflow:auto;border:1px solid var(--borda);border-radius:var(--radius-sm);}
+.bank-preview-table table{font-size:12px;}
+.bank-format-note{padding:11px 13px;border-radius:var(--radius-sm);background:var(--azul-bg);color:var(--azul);font-size:12px;line-height:1.5;margin-top:12px;}
+.bank-period-pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:var(--verde-bg);color:var(--verde);font-size:11px;font-weight:600;}
+.bank-saldo-indisponivel{font-family:'DM Sans',sans-serif!important;font-size:17px!important;color:var(--texto3)!important;}
+
 @media(max-width:900px){
   .report-options{grid-template-columns:repeat(2,minmax(0,1fr));}
   .report-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -211,6 +228,9 @@ th .cb-select{accent-color:var(--branco);}
 @media(max-width:768px){.config-permissions{grid-template-columns:1fr;}.config-user-card{padding:16px;}}
 
 @media(max-width:768px){
+  .bank-toolbar{grid-template-columns:1fr;}
+  .bank-import-item{flex-direction:column;}
+  .bank-import-item .btn{width:100%;justify-content:center;}
   .auth-card{padding:24px 20px;}
   .report-options{grid-template-columns:1fr;}
   .report-sheet{padding:16px;}
@@ -321,11 +341,12 @@ th .cb-select{accent-color:var(--branco);}
     <div class="nav-item" data-page="rifas" onclick="navigate('rifas')"><span class="nav-icon">&#127903;</span> Rifas e Eventos</div>
     <div class="nav-item" data-page="trabalhadores" onclick="navigate('trabalhadores')"><span class="nav-icon">&#127807;</span> Trabalhadores</div>
     <div class="nav-item" data-page="relatorios" onclick="navigate('relatorios')"><span class="nav-icon">&#128202;</span> Relatórios</div>
+    <div class="nav-item" id="navAppBanco" data-page="appBanco" onclick="navigate('appBanco')" hidden><span class="nav-icon">&#127974;</span> App Banco</div>
     <div class="nav-item" id="navConfiguracoes" data-page="configuracoes" onclick="navigate('configuracoes')" hidden><span class="nav-icon">&#9881;</span> Configurações</div>
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.2 - Perfis e auditoria</div>
+    <div style="margin-top:4px;">v1.3 - App Banco e OFX</div>
     <div class="sidebar-user">
       <div class="sidebar-user-email" id="usuarioLogadoEmail" title="Usuário conectado"></div>
       <div class="sidebar-user-role" id="usuarioLogadoPerfil">Usuário</div>
@@ -381,8 +402,10 @@ const dbRef=ref(firebaseDB,'axe_financeiro');
 const raizRef=ref(firebaseDB);
 const auditoriaRef=ref(firebaseDB,'auditoria_financeiro');
 const usuariosAcessosRef=ref(firebaseDB,'usuarios_acessos');
+const appBancoRef=ref(firebaseDB,'app_banco');
 
 let db={trabalhadores:[],mensalidades:[],lancamentos:[],rifas:[],cantina:[],auditoria:[]};
+let bancoDB={importacoes:[],transacoes:[]};
 let paginaAtual='dashboard';
 let filtroMes, filtroAno;
 let filtroTipoLanc='todos';
@@ -400,6 +423,7 @@ let _pararEscutaDB=null;
 let _pararEscutaAuditoria=null;
 let _pararEscutaPerfil=null;
 let _pararEscutaUsuariosConfig=null;
+let _pararEscutaAppBanco=null;
 let _usuariosConfigCache={};
 let perfilAcessoAtual={perfil:'usuario',ativo:true};
 let _auditoriaLegada=[];
@@ -408,6 +432,9 @@ let _eventosAuditoriaPendentes=[];
 let _salvamentosPendentes=0;
 let _focoAntesModal=null;
 let _baseAuditoria=null;
+let filtroTipoBanco='todos';
+let filtroBuscaBanco='';
+let _preImportacaoBanco=null;
 
 function normalizarDB(data,auditoriaAtual=[]){
   const origem=data&&typeof data==='object'?data:{};
@@ -432,6 +459,8 @@ const PERMISSOES_PADRAO_USUARIO=Object.freeze({
   rifas_operar:true,
   rifas_admin:false,
   relatorios_visualizar:true,
+  app_banco_visualizar:false,
+  app_banco_gerenciar:false,
   auditoria_visualizar:false
 });
 const DEFINICOES_PERMISSOES=[
@@ -445,13 +474,15 @@ const DEFINICOES_PERMISSOES=[
   {chave:'rifas_operar',titulo:'Operar rifas e eventos',desc:'Criar e editar rifas e eventos.'},
   {chave:'rifas_admin',titulo:'Administrar rifas e eventos',desc:'Excluir rifas e eventos.'},
   {chave:'relatorios_visualizar',titulo:'Visualizar relatórios',desc:'Abrir, personalizar, imprimir e salvar relatórios.'},
+  {chave:'app_banco_visualizar',titulo:'Visualizar App Banco',desc:'Consultar transações, totais e saldo dos extratos bancários.'},
+  {chave:'app_banco_gerenciar',titulo:'Gerenciar App Banco',desc:'Importar arquivos OFX e excluir importações bancárias.'},
   {chave:'auditoria_visualizar',titulo:'Visualizar históricos',desc:'Consultar autoria, alterações e exclusões.'}
 ];
 const PRESETS_PERMISSOES={
   leitura:{
     mensalidades_operar:false,mensalidades_admin:false,lancamentos_operar:false,lancamentos_admin:false,
     trabalhadores_gerenciar:false,cantina_operar:false,cantina_admin:false,rifas_operar:false,rifas_admin:false,
-    relatorios_visualizar:true,auditoria_visualizar:false
+    relatorios_visualizar:true,app_banco_visualizar:false,app_banco_gerenciar:false,auditoria_visualizar:false
   },
   operacional:{...PERMISSOES_PADRAO_USUARIO},
   gestor:Object.fromEntries(Object.keys(PERMISSOES_PADRAO_USUARIO).map(chave=>[chave,true]))
@@ -468,6 +499,7 @@ function temPermissao(chave){
 }
 function somenteSupremo(html){return isSupremo()?html:'';}
 function somentePermissao(chave,html){return temPermissao(chave)?html:'';}
+function podeVerAppBanco(){return temPermissao('app_banco_visualizar')||temPermissao('app_banco_gerenciar');}
 function exigirSupremo(acao='realizar esta ação'){
   if(isSupremo())return true;
   alert('Acesso restrito. Somente o perfil Supremo pode '+acao+'.');
@@ -517,6 +549,8 @@ function aplicarPerfilNaInterface(){
   if(navConfig)navConfig.hidden=!isSupremo();
   const navRelatorios=document.querySelector('.nav-item[data-page="relatorios"]');
   if(navRelatorios)navRelatorios.hidden=!temPermissao('relatorios_visualizar');
+  const navAppBanco=document.getElementById('navAppBanco');
+  if(navAppBanco)navAppBanco.hidden=!podeVerAppBanco();
 }
 function iniciarEscutaPerfilAcesso(user){
   if(_pararEscutaPerfil){_pararEscutaPerfil();_pararEscutaPerfil=null;}
@@ -525,15 +559,19 @@ function iniciarEscutaPerfilAcesso(user){
     if(!snapshot.exists())return;
     const anterior=JSON.stringify(perfilAcessoAtual);
     const podiaVerAuditoria=temPermissao('auditoria_visualizar');
+    const podiaVerBanco=podeVerAppBanco();
     perfilAcessoAtual=dadosPerfilNormalizados(snapshot.val(),user);
     const podeVerAuditoriaAgora=temPermissao('auditoria_visualizar');
+    const podeVerBancoAgora=podeVerAppBanco();
     if(!perfilAcessoAtual.ativo){signOut(firebaseAuth).catch(()=>{});return;}
     aplicarPerfilNaInterface();
     if(podiaVerAuditoria!==podeVerAuditoriaAgora&&_appInicializado){carregarAuditoriaPorPerfil().catch(erro=>console.error('Falha ao atualizar auditoria:',erro));}
+    if(podiaVerBanco!==podeVerBancoAgora&&_appInicializado){carregarAppBanco().catch(erro=>console.error('Falha ao atualizar o App Banco:',erro));}
     if(anterior!==JSON.stringify(perfilAcessoAtual)&&_appInicializado){
       if(paginaAtual==='configuracoes'&&!isSupremo()){navigate('dashboard');return;}
       if(paginaAtual==='relatorios'&&!temPermissao('relatorios_visualizar')){navigate('dashboard');return;}
-      const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
+      if(paginaAtual==='appBanco'&&!podeVerAppBanco()){navigate('dashboard');return;}
+      const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,appBanco:pgAppBanco,configuracoes:pgConfiguracoes};
       if(pages[paginaAtual])pages[paginaAtual]();
     }
   },erro=>console.error('Falha ao atualizar permissões em tempo real:',erro));
@@ -756,7 +794,7 @@ function carregarDB(){
         _iniciado=true;
         resolve();
       } else if(_salvamentosPendentes===0){
-        const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
+        const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,appBanco:pgAppBanco,configuracoes:pgConfiguracoes};
         if(pages[paginaAtual])pages[paginaAtual]();
       }
     },erro=>{
@@ -792,11 +830,20 @@ function iniciarFiltroGlobal(){
   sm.value=filtroMes;
   sa.value=filtroAno;
 }
+function garantirAnoFiltroGlobal(ano){
+  const select=document.getElementById('selectAnoGlobal');
+  if(!select||!Number.isFinite(Number(ano)))return;
+  const valor=String(Number(ano));
+  if(!Array.from(select.options).some(o=>o.value===valor)){
+    const anos=[...Array.from(select.options).map(o=>Number(o.value)),Number(ano)].filter(Number.isFinite).sort((a,b)=>a-b);
+    select.innerHTML=[...new Set(anos)].map(a=>'<option value="'+a+'">'+a+'</option>').join('');
+  }
+}
 function alterarPeriodoGlobal(){
   filtroMes=+document.getElementById('selectMesGlobal').value;
   filtroAno=+document.getElementById('selectAnoGlobal').value;
   // re-renderiza a aba atual com o novo período
-  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,relatorios:pgRelatorios};
+  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,relatorios:pgRelatorios,appBanco:pgAppBanco};
   if(pages[paginaAtual])pages[paginaAtual]();
 }
 function atualizarSeletorGlobal(){
@@ -810,10 +857,11 @@ function atualizarSeletorGlobal(){
 function toggleSidebar(){const s=document.getElementById('sidebar');const o=document.getElementById('overlayBg');const aberto=!s.classList.contains('open');s.classList.toggle('open',aberto);o.style.display=aberto?'block':'none';const h=document.querySelector('.hamburger');if(h)h.setAttribute('aria-expanded',String(aberto));}
 function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlayBg').style.display='none';const h=document.querySelector('.hamburger');if(h)h.setAttribute('aria-expanded','false');}
 
-const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios',configuracoes:'Configurações'};
+const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios',appBanco:'App Banco',configuracoes:'Configurações'};
 function navigate(page){
   if(page==='configuracoes'&&!isSupremo()){alert('Acesso restrito ao perfil Supremo.');page='dashboard';}
   if(page==='relatorios'&&!temPermissao('relatorios_visualizar')){alert('Seu acesso não possui permissão para visualizar relatórios.');page='dashboard';}
+  if(page==='appBanco'&&!podeVerAppBanco()){alert('Seu acesso não possui permissão para visualizar o App Banco.');page='dashboard';}
   if(_pararEscutaUsuariosConfig&&page!=='configuracoes'){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
   paginaAtual=page;
   document.querySelectorAll('.nav-item').forEach(n=>{
@@ -823,7 +871,7 @@ function navigate(page){
   document.getElementById('topbarActions').innerHTML='';
   closeSidebar();
   atualizarSeletorGlobal();
-  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,configuracoes:pgConfiguracoes};
+  const pages={dashboard:pgDashboard,mensalidades:pgMensalidades,lancamentos:pgLancamentos,cantina:pgCantina,rifas:pgRifas,trabalhadores:pgTrabalhadores,relatorios:pgRelatorios,appBanco:pgAppBanco,configuracoes:pgConfiguracoes};
   if(pages[page])pages[page]();
 }
 
@@ -949,12 +997,17 @@ function encerrarAplicativoLocal(){
   }
   if(_pararEscutaPerfil){_pararEscutaPerfil();_pararEscutaPerfil=null;}
   if(_pararEscutaUsuariosConfig){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
+  if(_pararEscutaAppBanco){_pararEscutaAppBanco();_pararEscutaAppBanco=null;}
   _iniciado=false;
   _appInicializado=false;
   _appInicializando=false;
   _salvamentosPendentes=0;
   perfilAcessoAtual={perfil:'usuario',ativo:true};
   db=normalizarDB(null,[]);
+  bancoDB={importacoes:[],transacoes:[]};
+  filtroTipoBanco='todos';
+  filtroBuscaBanco='';
+  _preImportacaoBanco=null;
   paginaAtual='dashboard';
   closeSidebar();
   closeModal();
@@ -2276,6 +2329,263 @@ function delRifa(id){if(!exigirPermissao('rifas_admin','excluir rifas e eventos'
 });}
 
 
+// APP BANCO — ESPELHO CONSULTIVO DO EXTRATO OFX
+function normalizarAppBanco(data){
+  const origem=data&&typeof data==='object'?data:{};
+  const lista=valor=>Array.isArray(valor)?valor.filter(Boolean):Object.values(valor||{}).filter(Boolean);
+  return{importacoes:lista(origem.importacoes),transacoes:lista(origem.transacoes)};
+}
+function carregarAppBanco(){
+  if(_pararEscutaAppBanco){_pararEscutaAppBanco();_pararEscutaAppBanco=null;}
+  if(!podeVerAppBanco()){
+    bancoDB={importacoes:[],transacoes:[]};
+    return Promise.resolve();
+  }
+  return new Promise((resolve,reject)=>{
+    let primeira=true;
+    _pararEscutaAppBanco=onValue(appBancoRef,snapshot=>{
+      bancoDB=normalizarAppBanco(snapshot.val());
+      if(paginaAtual==='appBanco'&&_appInicializado)renderAppBanco();
+      if(primeira){primeira=false;resolve();}
+    },erro=>{
+      if(primeira){primeira=false;reject(erro);}else console.error('Falha ao carregar o App Banco:',erro);
+    });
+  });
+}
+function textoOFX(valor){
+  return String(valor||'').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").trim();
+}
+function campoOFX(bloco,tag){
+  const re=new RegExp('<'+tag+'(?:\\s[^>]*)?>\\s*([^<\\r\\n]+)','i');
+  const achou=String(bloco||'').match(re);
+  return achou?textoOFX(achou[1]):'';
+}
+function dataOFX(valor){
+  const numeros=String(valor||'').match(/^(\d{4})(\d{2})(\d{2})/);
+  if(!numeros)return'';
+  const iso=numeros[1]+'-'+numeros[2]+'-'+numeros[3];
+  return dataISOValida(iso)?iso:'';
+}
+function numeroOFX(valor){
+  let texto=String(valor??'').trim().replace(/\s/g,'');
+  if(!texto)return null;
+  if(texto.includes(',')&&!texto.includes('.'))texto=texto.replace(',','.');
+  const numero=Number(texto);
+  return Number.isFinite(numero)?numero:null;
+}
+function descricaoOFX(bloco){
+  const nome=campoOFX(bloco,'NAME');
+  const memo=campoOFX(bloco,'MEMO');
+  const check=campoOFX(bloco,'CHECKNUM');
+  const partes=[];
+  [nome,memo].forEach(item=>{if(item&&!partes.some(p=>p.toLowerCase()===item.toLowerCase()))partes.push(item);});
+  if(check)partes.push('Documento '+check);
+  return partes.join(' — ')||'Transação bancária';
+}
+function chaveUnicaBanco(transacao,conta=''){
+  const fitid=String(transacao.fitid||'').trim();
+  if(fitid)return String(conta||'sem-conta')+'|FITID|'+fitid;
+  return [String(conta||'sem-conta'),transacao.data,Number(transacao.valorAssinado||0).toFixed(2),String(transacao.descricao||'').toLowerCase().replace(/\s+/g,' ').trim()].join('|');
+}
+function parseOFX(conteudo,nomeArquivo='extrato.ofx'){
+  const texto=String(conteudo||'').replace(/^\uFEFF/,'');
+  if(!/<OFX[>\s]/i.test(texto)&&!/<STMTTRN>/i.test(texto))throw new Error('O arquivo não parece ser um extrato OFX válido.');
+  const conta=campoOFX(texto,'ACCTID');
+  const banco=campoOFX(texto,'BANKID');
+  const moeda=campoOFX(texto,'CURDEF')||'BRL';
+  const periodoInicio=dataOFX(campoOFX(texto,'DTSTART'));
+  const periodoFim=dataOFX(campoOFX(texto,'DTEND'));
+  const blocos=[];
+  const re=/<STMTTRN>([\s\S]*?)(?:<\/STMTTRN>|(?=<STMTTRN>)|(?=<\/BANKTRANLIST>)|$)/gi;
+  let match;
+  while((match=re.exec(texto))!==null)blocos.push(match[1]);
+  const vistosArquivo=new Set();
+  const transacoes=[];
+  let duplicadasArquivo=0;
+  blocos.forEach((bloco,indice)=>{
+    const valorAssinado=numeroOFX(campoOFX(bloco,'TRNAMT'));
+    const data=dataOFX(campoOFX(bloco,'DTPOSTED')||campoOFX(bloco,'DTUSER'));
+    if(valorAssinado===null||!data)return;
+    const transacao={
+      data,valorAssinado,valor:Math.abs(valorAssinado),tipo:valorAssinado>=0?'entrada':'saida',
+      descricao:descricaoOFX(bloco),fitid:campoOFX(bloco,'FITID'),trnType:campoOFX(bloco,'TRNTYPE'),
+      indiceArquivo:indice+1
+    };
+    transacao.chaveUnica=chaveUnicaBanco(transacao,conta);
+    if(vistosArquivo.has(transacao.chaveUnica)){duplicadasArquivo++;return;}
+    vistosArquivo.add(transacao.chaveUnica);
+    transacoes.push(transacao);
+  });
+  if(!transacoes.length)throw new Error('Nenhuma transação válida foi encontrada no arquivo OFX.');
+  const ledgerMatch=texto.match(/<LEDGERBAL>([\s\S]*?)(?:<\/LEDGERBAL>|(?=<AVAILBAL>)|$)/i);
+  const saldoBloco=ledgerMatch?ledgerMatch[1]:'';
+  const saldoFinal=numeroOFX(campoOFX(saldoBloco,'BALAMT'));
+  const saldoData=dataOFX(campoOFX(saldoBloco,'DTASOF'))||periodoFim||transacoes[transacoes.length-1].data;
+  const dataReferencia=periodoFim||saldoData||transacoes[transacoes.length-1].data;
+  const refDate=new Date(dataReferencia+'T12:00:00');
+  return{
+    nomeArquivo,conta,banco,moeda,periodoInicio,periodoFim,saldoFinal,saldoData,transacoes,duplicadasArquivo,
+    mesReferencia:refDate.getMonth()+1,anoReferencia:refDate.getFullYear()
+  };
+}
+async function lerArquivoOFX(arquivo){
+  if(!arquivo)throw new Error('Selecione um arquivo OFX.');
+  if(arquivo.size>10*1024*1024)throw new Error('O arquivo excede o limite de 10 MB.');
+  if(!/\.(ofx|qfx)$/i.test(arquivo.name||''))throw new Error('Utilize um arquivo com extensão .OFX ou .QFX.');
+  const buffer=await arquivo.arrayBuffer();
+  const inicio=new TextDecoder('windows-1252').decode(buffer.slice(0,1200));
+  const usa1252=/CHARSET:\s*(1252|WINDOWS-1252)|ENCODING:\s*USASCII/i.test(inicio);
+  try{return new TextDecoder(usa1252?'windows-1252':'utf-8',{fatal:false}).decode(buffer);}
+  catch(erro){return new TextDecoder('windows-1252').decode(buffer);}
+}
+function transacoesBancoPeriodo(){
+  return(bancoDB.transacoes||[]).filter(t=>{
+    if(!dataISOValida(t.data))return false;
+    const d=new Date(t.data+'T12:00:00');
+    return d.getMonth()+1===filtroMes&&d.getFullYear()===filtroAno;
+  });
+}
+function importacoesBancoPeriodo(){
+  return(bancoDB.importacoes||[]).filter(i=>Number(i.mesReferencia)===Number(filtroMes)&&Number(i.anoReferencia)===Number(filtroAno)).sort((a,b)=>Number(b.importadoEm||0)-Number(a.importadoEm||0));
+}
+function resumoBancoPeriodo(){
+  const transacoes=transacoesBancoPeriodo();
+  const entradas=transacoes.filter(t=>t.tipo==='entrada').reduce((s,t)=>s+(Number(t.valor)||0),0);
+  const saidas=transacoes.filter(t=>t.tipo==='saida').reduce((s,t)=>s+(Number(t.valor)||0),0);
+  const imports=importacoesBancoPeriodo();
+  const comSaldo=imports.find(i=>i.saldoFinal!==null&&i.saldoFinal!==undefined&&Number.isFinite(Number(i.saldoFinal)));
+  return{entradas,saidas,liquido:entradas-saidas,saldoFinal:comSaldo?Number(comSaldo.saldoFinal):null,importacaoSaldo:comSaldo||null,total:transacoes.length};
+}
+function pgAppBanco(){
+  if(!podeVerAppBanco()){navigate('dashboard');return;}
+  document.getElementById('topbarActions').innerHTML=temPermissao('app_banco_gerenciar')?'<button class="btn btn-primary" onclick="abrirImportacaoBanco()">&#8679; Importar OFX</button>':'';
+  document.getElementById('pageContent').innerHTML='<div class="page">'+
+    '<div class="alert alert-verde"><strong>Espelho consultivo do banco.</strong>&nbsp; Estes dados são salvos separadamente e não alteram o dashboard, os lançamentos ou os relatórios financeiros do sistema.</div>'+
+    '<div class="grid-4 mb-6" id="bancoMetricas"></div>'+
+    '<div class="card mb-6">'+
+      '<div class="section-header"><div><div class="section-title">Transações do extrato</div><div class="text-muted" style="margin-top:4px;">'+mesNome(filtroMes)+' de '+filtroAno+'</div></div></div>'+
+      '<div class="bank-toolbar"><div><label class="form-label" for="buscaBanco">Pesquisar transação</label><input class="form-control" id="buscaBanco" value="'+escapeAttr(filtroBuscaBanco)+'" placeholder="Nome, descrição ou identificador" oninput="filtrarBuscaBanco(this.value)"></div><div><label class="form-label" for="tipoBanco">Tipo</label><select class="form-control" id="tipoBanco" onchange="setFiltroTipoBanco(this.value)"><option value="todos" '+(filtroTipoBanco==='todos'?'selected':'')+'>Entradas e saídas</option><option value="entrada" '+(filtroTipoBanco==='entrada'?'selected':'')+'>Somente entradas</option><option value="saida" '+(filtroTipoBanco==='saida'?'selected':'')+'>Somente saídas</option></select></div></div>'+
+      '<div id="bancoTabela"></div>'+
+    '</div>'+
+    '<div class="card" id="bancoImportacoes"></div>'+
+  '</div>';
+  renderAppBanco();
+}
+function renderAppBanco(){
+  if(paginaAtual!=='appBanco')return;
+  renderMetricasBanco();renderTabelaBanco();renderImportacoesBanco();
+}
+function renderMetricasBanco(){
+  const el=document.getElementById('bancoMetricas');if(!el)return;
+  const r=resumoBancoPeriodo();
+  const saldo=r.saldoFinal===null?'<div class="metric-value bank-saldo-indisponivel">Não informado</div>':'<div class="metric-value '+(r.saldoFinal>=0?'positivo':'negativo')+'">'+fmt(r.saldoFinal)+'</div>';
+  const fonte=r.importacaoSaldo?'<div class="bank-balance-source"><span class="bank-period-pill">Saldo do OFX</span><span>'+escapeHTML(r.importacaoSaldo.nomeArquivo||'Extrato')+(r.importacaoSaldo.saldoData?' em '+fmtData(r.importacaoSaldo.saldoData):'')+'</span></div>':'<div class="metric-sub">O banco não informou saldo no extrato deste mês.</div>';
+  el.innerHTML='<div class="metric"><div class="metric-label">Total de entradas</div><div class="metric-value positivo">'+fmt(r.entradas)+'</div><div class="metric-sub">'+r.total+' transação(ões) no período</div></div>'+
+    '<div class="metric"><div class="metric-label">Total de saídas</div><div class="metric-value negativo">'+fmt(r.saidas)+'</div><div class="metric-sub">Valores identificados pelo sinal do OFX</div></div>'+
+    '<div class="metric"><div class="metric-label">Movimentação líquida</div><div class="metric-value '+(r.liquido>=0?'positivo':'negativo')+'">'+fmt(r.liquido)+'</div><div class="metric-sub">Entradas menos saídas do mês</div></div>'+
+    '<div class="metric"><div class="metric-label">Total no caixa bancário</div>'+saldo+fonte+'</div>';
+}
+function transacoesBancoFiltradas(){
+  const busca=String(filtroBuscaBanco||'').toLowerCase().trim();
+  return transacoesBancoPeriodo().filter(t=>(filtroTipoBanco==='todos'||t.tipo===filtroTipoBanco)&&(!busca||[t.descricao,t.fitid,t.trnType,t.nomeArquivo].some(v=>String(v||'').toLowerCase().includes(busca)))).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))||Number(b.importadoEm||0)-Number(a.importadoEm||0));
+}
+function renderTabelaBanco(){
+  const el=document.getElementById('bancoTabela');if(!el)return;
+  const dados=transacoesBancoFiltradas();
+  if(!dados.length){el.innerHTML='<div class="empty"><div class="empty-icon">&#127974;</div><div>Nenhuma transação encontrada para este período.</div></div>';return;}
+  el.innerHTML='<div class="table-wrap"><table><thead><tr><th>Data</th><th>Transação</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+dados.map(t=>'<tr><td style="white-space:nowrap;">'+fmtData(t.data)+'</td><td><div class="bank-transaction-desc">'+escapeHTML(t.descricao||'Transação bancária')+'</div><div class="bank-transaction-id">'+escapeHTML(t.fitid?'ID '+t.fitid:(t.trnType||'Sem identificador bancário'))+'</div></td><td><span class="badge '+(t.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(t.tipo==='entrada'?'Entrada':'Saída')+'</span></td><td style="text-align:right;white-space:nowrap;" class="'+(t.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(t.tipo==='entrada'?'+ ':'- ')+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>';
+}
+function renderImportacoesBanco(){
+  const el=document.getElementById('bancoImportacoes');if(!el)return;
+  const imports=importacoesBancoPeriodo();
+  const botaoImportar=temPermissao('app_banco_gerenciar')?'<button class="btn btn-sm btn-primary" onclick="abrirImportacaoBanco()">&#8679; Importar extrato</button>':'';
+  el.innerHTML='<div class="section-header"><div><div class="section-title">Arquivos importados</div><div class="text-muted" style="margin-top:4px;">Origem e histórico dos dados exibidos neste mês.</div></div>'+botaoImportar+'</div>'+
+    (!imports.length?'<div class="report-empty">Nenhum arquivo OFX foi importado para '+mesNome(filtroMes)+' de '+filtroAno+'.</div>':'<div class="bank-import-list">'+imports.map(i=>'<div class="bank-import-item"><div><div class="bank-file-name">'+escapeHTML(i.nomeArquivo||'Extrato OFX')+'</div><div class="bank-import-meta">Importado por '+escapeHTML(i.importadoPorEmail||'usuário não identificado')+' em '+escapeHTML(fmtDataHoraAuditoria(i.importadoEm))+'<br>'+Number(i.totalTransacoes||0)+' transação(ões) adicionada(s)'+(i.duplicadasIgnoradas?' · '+Number(i.duplicadasIgnoradas)+' duplicada(s) ignorada(s)':'')+(i.saldoFinal!==null&&i.saldoFinal!==undefined?' · Saldo OFX: '+fmt(i.saldoFinal):' · Saldo não informado pelo banco')+'</div></div>'+(temPermissao('app_banco_gerenciar')?'<button class="btn btn-sm btn-danger" onclick="excluirImportacaoBanco(\''+escapeAttr(i.id)+'\')">Excluir importação</button>':'')+'</div>').join('')+'</div>');
+}
+function filtrarBuscaBanco(valor){filtroBuscaBanco=String(valor||'');renderTabelaBanco();}
+function setFiltroTipoBanco(valor){filtroTipoBanco=['entrada','saida'].includes(valor)?valor:'todos';renderTabelaBanco();}
+function abrirImportacaoBanco(){
+  if(!exigirPermissao('app_banco_gerenciar','importar extratos bancários'))return;
+  _preImportacaoBanco=null;
+  openModal('Importar extrato bancário',
+    '<div class="bank-import-card card card-sm"><div class="section-title">&#127974; Selecione o extrato OFX</div><p class="text-muted" style="margin-top:8px;line-height:1.5;">Exporte o extrato diretamente no aplicativo ou internet banking. O sistema aceita arquivos <strong>.OFX</strong> e <strong>.QFX</strong>.</p><div class="form-group" style="margin-top:16px;margin-bottom:0;"><label class="form-label" for="arquivoBanco">Arquivo do banco</label><input type="file" class="form-control" id="arquivoBanco" accept=".ofx,.qfx,application/x-ofx" onchange="processarArquivoBanco(this.files[0])"></div><div class="bank-format-note"><strong>PDF não é aceito nesta versão.</strong> O OFX contém datas, valores, identificadores e saldo em campos estruturados, reduzindo erros de leitura.</div></div><div id="statusImportacaoBanco" class="text-muted" style="margin-top:14px;">Nenhum arquivo selecionado.</div>',
+    '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>');
+}
+async function processarArquivoBanco(arquivo){
+  const status=document.getElementById('statusImportacaoBanco');
+  if(status)status.textContent='Lendo e validando o arquivo...';
+  try{
+    const conteudo=await lerArquivoOFX(arquivo);
+    const dados=parseOFX(conteudo,arquivo.name);
+    const existentes=new Set((bancoDB.transacoes||[]).map(t=>t.chaveUnica).filter(Boolean));
+    dados.transacoes.forEach(t=>{t.duplicada=existentes.has(t.chaveUnica);});
+    dados.duplicadasExistentes=dados.transacoes.filter(t=>t.duplicada).length;
+    _preImportacaoBanco=dados;
+    renderPreviaImportacaoBanco();
+  }catch(erro){
+    console.error('Falha ao interpretar OFX:',erro);
+    _preImportacaoBanco=null;
+    if(status)status.innerHTML='<div class="alert alert-vermelho" style="margin:0;">'+escapeHTML(erro.message||'Não foi possível ler o arquivo OFX.')+'</div>';
+  }
+}
+function renderPreviaImportacaoBanco(){
+  const d=_preImportacaoBanco;if(!d)return;
+  const novas=d.transacoes.filter(t=>!t.duplicada);
+  const ent=novas.filter(t=>t.tipo==='entrada').reduce((s,t)=>s+t.valor,0);
+  const sai=novas.filter(t=>t.tipo==='saida').reduce((s,t)=>s+t.valor,0);
+  const mesOpts=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===d.mesReferencia?'selected':'')+'>'+mesNome(i+1)+'</option>').join('');
+  const anoAtual=getAno();const anos=[...new Set([anoAtual-2,anoAtual-1,anoAtual,anoAtual+1,d.anoReferencia])].sort((a,b)=>a-b);
+  document.getElementById('modalBody').innerHTML='<div class="alert '+(novas.length?'alert-verde':'alert-amarelo')+'"><strong>'+novas.length+' nova(s) transação(ões).</strong>&nbsp; '+(d.duplicadasExistentes+d.duplicadasArquivo)+' duplicada(s) serão ignoradas.</div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Mês de referência</label><select class="form-control" id="bancoMesReferencia">'+mesOpts+'</select></div><div class="form-group"><label class="form-label">Ano de referência</label><select class="form-control" id="bancoAnoReferencia">'+anos.map(a=>'<option value="'+a+'" '+(a===d.anoReferencia?'selected':'')+'>'+a+'</option>').join('')+'</select></div></div>'+
+    '<div class="grid-3 mb-4"><div class="report-summary-box"><div class="report-summary-label">Entradas novas</div><div class="report-summary-value valor-positivo">'+fmt(ent)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Saídas novas</div><div class="report-summary-value valor-negativo">'+fmt(sai)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Saldo informado</div><div class="report-summary-value">'+(d.saldoFinal===null?'Não informado':fmt(d.saldoFinal))+'</div></div></div>'+
+    '<div class="text-sm" style="margin-bottom:10px;"><strong>Arquivo:</strong> '+escapeHTML(d.nomeArquivo)+' · <strong>Conta:</strong> '+escapeHTML(d.conta?('final '+d.conta.slice(-4)):'não identificada')+' · <strong>Moeda:</strong> '+escapeHTML(d.moeda)+'</div>'+
+    '<div class="bank-preview-table"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+d.transacoes.slice(0,50).map(t=>'<tr style="'+(t.duplicada?'opacity:.5;':'')+'"><td>'+fmtData(t.data)+'</td><td>'+escapeHTML(t.descricao)+(t.duplicada?' <span class="badge badge-cinza">Já importada</span>':'')+'</td><td>'+(t.tipo==='entrada'?'Entrada':'Saída')+'</td><td style="text-align:right;">'+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>'+
+    (d.transacoes.length>50?'<div class="text-muted" style="margin-top:8px;">Prévia limitada às primeiras 50 transações.</div>':'');
+  document.getElementById('modalFooter').innerHTML='<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" '+(!novas.length?'disabled ':'')+'onclick="confirmarImportacaoBanco()">&#10003; Confirmar importação</button>';
+}
+async function confirmarImportacaoBanco(){
+  if(!exigirPermissao('app_banco_gerenciar','confirmar a importação bancária'))return;
+  const d=_preImportacaoBanco;if(!d){alert('Selecione novamente o arquivo OFX.');return;}
+  const mes=Number(document.getElementById('bancoMesReferencia')?.value||d.mesReferencia);
+  const ano=Number(document.getElementById('bancoAnoReferencia')?.value||d.anoReferencia);
+  const existentes=new Set((bancoDB.transacoes||[]).map(t=>t.chaveUnica).filter(Boolean));
+  const novas=d.transacoes.filter(t=>!existentes.has(t.chaveUnica));
+  if(!novas.length){alert('Todas as transações deste arquivo já foram importadas.');return;}
+  const importacaoId=uid();const agora=Date.now();const user=firebaseAuth.currentUser;
+  const atualizacoes={};
+  novas.forEach(t=>{
+    const id=uid();
+    atualizacoes['app_banco/transacoes/'+id]={id,importacaoId,data:t.data,descricao:t.descricao,valor:Number(t.valor),valorAssinado:Number(t.valorAssinado),tipo:t.tipo,fitid:t.fitid||'',trnType:t.trnType||'',chaveUnica:t.chaveUnica,nomeArquivo:d.nomeArquivo,importadoEm:agora};
+  });
+  const duplicadasIgnoradas=d.duplicadasArquivo+(d.transacoes.length-novas.length);
+  atualizacoes['app_banco/importacoes/'+importacaoId]={id:importacaoId,nomeArquivo:d.nomeArquivo,mesReferencia:mes,anoReferencia:ano,periodoInicio:d.periodoInicio||'',periodoFim:d.periodoFim||'',saldoFinal:d.saldoFinal,saldoData:d.saldoData||'',contaFinal:d.conta?d.conta.slice(-4):'',banco:d.banco||'',moeda:d.moeda,totalTransacoes:novas.length,duplicadasIgnoradas,importadoEm:agora,importadoPorUid:user?.uid||'',importadoPorEmail:user?.email||''};
+  const eventoId=uid();
+  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:importacaoId,acao:'Extrato importado',descricao:d.nomeArquivo+' — '+novas.length+' transações adicionadas.',ocorridoEm:agora,usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
+  const botao=document.querySelector('#modalFooter .btn-primary');if(botao){botao.disabled=true;botao.textContent='Importando...';}
+  try{
+    await update(raizRef,atualizacoes);
+    filtroMes=mes;filtroAno=ano;garantirAnoFiltroGlobal(ano);atualizarSeletorGlobal();
+    _preImportacaoBanco=null;closeModal();navigate('appBanco');
+    alert('Extrato importado com sucesso. '+novas.length+' transação(ões) adicionada(s) e '+duplicadasIgnoradas+' duplicada(s) ignorada(s).');
+  }catch(erro){
+    console.error('Falha ao salvar extrato:',erro);
+    alert('Não foi possível salvar o extrato. Confirme as regras de acesso do Firebase para o nó app_banco.');
+    if(botao){botao.disabled=false;botao.innerHTML='&#10003; Confirmar importação';}
+  }
+}
+async function excluirImportacaoBanco(id){
+  if(!exigirPermissao('app_banco_gerenciar','excluir importações bancárias'))return;
+  const imp=(bancoDB.importacoes||[]).find(i=>String(i.id)===String(id));if(!imp)return;
+  const relacionadas=(bancoDB.transacoes||[]).filter(t=>String(t.importacaoId)===String(id));
+  if(!confirm('Excluir o arquivo “'+(imp.nomeArquivo||'Extrato OFX')+'” e suas '+relacionadas.length+' transação(ões)? Esta ação não afeta os demais módulos.'))return;
+  const atualizacoes={['app_banco/importacoes/'+id]:null};
+  relacionadas.forEach(t=>{atualizacoes['app_banco/transacoes/'+t.id]=null;});
+  const eventoId=uid();const user=firebaseAuth.currentUser;
+  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:id,acao:'Importação excluída',descricao:(imp.nomeArquivo||'Extrato OFX')+' — '+relacionadas.length+' transações removidas.',ocorridoEm:Date.now(),usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
+  try{await update(raizRef,atualizacoes);}
+  catch(erro){console.error(erro);alert('Não foi possível excluir a importação. Verifique as regras do Firebase.');}
+}
+
 // CONFIGURAÇÕES DE ACESSO — SOMENTE SUPREMO
 function permissoesEfetivasUsuario(usuario){
   const salvas=usuario?.permissoes&&typeof usuario.permissoes==='object'?usuario.permissoes:{};
@@ -2643,14 +2953,15 @@ Object.assign(window,{
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabIsentoNoPeriodo,trabElegivelParaCobranca,trabsValidosParaPeriodo,trabsElegiveisParaCobranca,migrarTrabalhadores,
   totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
-  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,pgConfiguracoes,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
+  pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,pgAppBanco,pgConfiguracoes,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,abrirExcluirMesMensalidades,excluirMesMensalidades,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
-  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
+  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
+  abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,
 });
 
 async function init(){
@@ -2659,6 +2970,7 @@ async function init(){
   document.getElementById('pageContent').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--texto3);"><div style="font-size:32px;">&#9789;</div><div style="font-size:15px;">Conectando ao banco de dados...</div></div>';
   try{
     await carregarDB();
+    await carregarAppBanco();
     // A auditoria é carregada somente após o banco, preservando o perfil já validado.
     await carregarAuditoriaPorPerfil();
     await migrarAuditoriaLegadaSeNecessario();
