@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Axe Financeiro - Terreiro | App Banco</title>
+<title>Axe Financeiro - Terreiro | App Banco OFX e CSV</title>
 <meta name="description" content="Sistema interno de gestão financeira do terreiro.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -194,6 +194,18 @@ th .cb-select{accent-color:var(--branco);}
 .bank-format-note{padding:11px 13px;border-radius:var(--radius-sm);background:var(--azul-bg);color:var(--azul);font-size:12px;line-height:1.5;margin-top:12px;}
 .bank-period-pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:var(--verde-bg);color:var(--verde);font-size:11px;font-weight:600;}
 .bank-saldo-indisponivel{font-family:'DM Sans',sans-serif!important;font-size:17px!important;color:var(--texto3)!important;}
+
+.bank-csv-map{border:1px solid rgba(27,79,114,.22);background:rgba(219,234,254,.42);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+.bank-csv-meta{font-size:12px;color:var(--azul);line-height:1.5;padding:9px 11px;background:rgba(255,255,255,.72);border-radius:var(--radius-sm);}
+.bank-map-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;}
+.bank-map-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:12px;margin-top:2px;border-top:1px solid rgba(27,79,114,.16);}
+.bank-map-actions .text-muted{line-height:1.45;}
+.bank-inline-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;}
+.bank-clean-details{margin:0 0 12px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--creme);font-size:12px;color:var(--texto2);}
+.bank-clean-details summary{cursor:pointer;padding:10px 12px;font-weight:600;color:var(--azul);}
+.bank-clean-details>div{padding:0 12px 11px;line-height:1.55;}
+.modal:has(.bank-import-card),.modal:has(.bank-csv-map),.modal:has(.bank-preview-table){max-width:900px;}
+@media(max-width:600px){.bank-map-grid{grid-template-columns:1fr;}.bank-map-actions{align-items:stretch;flex-direction:column;}.bank-map-actions .btn{width:100%;justify-content:center;}.bank-inline-field{grid-template-columns:1fr;}.bank-inline-field .btn{width:100%;justify-content:center;}.bank-csv-map{padding:12px;}}
 
 @media(max-width:900px){
   .report-options{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -848,7 +860,7 @@ textarea.form-control{
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.3 - App Banco e OFX</div>
+    <div style="margin-top:4px;">v1.4 - App Banco OFX/CSV</div>
     <div class="sidebar-user">
       <div class="sidebar-user-email" id="usuarioLogadoEmail" title="Usuário conectado"></div>
       <div class="sidebar-user-role" id="usuarioLogadoPerfil">Usuário</div>
@@ -977,7 +989,7 @@ const DEFINICOES_PERMISSOES=[
   {chave:'rifas_admin',titulo:'Administrar rifas e eventos',desc:'Excluir rifas e eventos.'},
   {chave:'relatorios_visualizar',titulo:'Visualizar relatórios',desc:'Abrir, personalizar, imprimir e salvar relatórios.'},
   {chave:'app_banco_visualizar',titulo:'Visualizar App Banco',desc:'Consultar transações, totais e saldo dos extratos bancários.'},
-  {chave:'app_banco_gerenciar',titulo:'Gerenciar App Banco',desc:'Importar arquivos OFX e excluir importações bancárias.'},
+  {chave:'app_banco_gerenciar',titulo:'Gerenciar App Banco',desc:'Importar arquivos OFX/CSV e excluir importações bancárias.'},
   {chave:'auditoria_visualizar',titulo:'Visualizar históricos',desc:'Consultar autoria, alterações e exclusões.'}
 ];
 const PRESETS_PERMISSOES={
@@ -2831,7 +2843,7 @@ function delRifa(id){if(!exigirPermissao('rifas_admin','excluir rifas e eventos'
 });}
 
 
-// APP BANCO — ESPELHO CONSULTIVO DO EXTRATO OFX
+// APP BANCO — ESPELHO CONSULTIVO DOS EXTRATOS OFX E CSV
 function normalizarAppBanco(data){
   const origem=data&&typeof data==='object'?data:{};
   const lista=valor=>Array.isArray(valor)?valor.filter(Boolean):Object.values(valor||{}).filter(Boolean);
@@ -2911,7 +2923,7 @@ function parseOFX(conteudo,nomeArquivo='extrato.ofx'){
     const transacao={
       data,valorAssinado,valor:Math.abs(valorAssinado),tipo:valorAssinado>=0?'entrada':'saida',
       descricao:descricaoOFX(bloco),fitid:campoOFX(bloco,'FITID'),trnType:campoOFX(bloco,'TRNTYPE'),
-      indiceArquivo:indice+1
+      indiceArquivo:indice+1,origemFormato:'OFX'
     };
     transacao.chaveUnica=chaveUnicaBanco(transacao,conta);
     if(vistosArquivo.has(transacao.chaveUnica)){duplicadasArquivo++;return;}
@@ -2926,19 +2938,336 @@ function parseOFX(conteudo,nomeArquivo='extrato.ofx'){
   const dataReferencia=periodoFim||saldoData||transacoes[transacoes.length-1].data;
   const refDate=new Date(dataReferencia+'T12:00:00');
   return{
-    nomeArquivo,conta,banco,moeda,periodoInicio,periodoFim,saldoFinal,saldoData,transacoes,duplicadasArquivo,
+    nomeArquivo,formatoArquivo:'OFX',conta,banco,moeda,periodoInicio,periodoFim,saldoFinal,saldoData,transacoes,duplicadasArquivo,
+    linhasIgnoradas:Math.max(0,blocos.length-transacoes.length-duplicadasArquivo),
     mesReferencia:refDate.getMonth()+1,anoReferencia:refDate.getFullYear()
   };
 }
-async function lerArquivoOFX(arquivo){
-  if(!arquivo)throw new Error('Selecione um arquivo OFX.');
-  if(arquivo.size>10*1024*1024)throw new Error('O arquivo excede o limite de 10 MB.');
-  if(!/\.(ofx|qfx)$/i.test(arquivo.name||''))throw new Error('Utilize um arquivo com extensão .OFX ou .QFX.');
+
+// ── LEITOR CSV FLEXÍVEL ────────────────────────────────────────────────────
+const ALIASES_CSV={
+  data:['data','date','data movimento','data movimentacao','data lançamento','data lancamento','data transacao','data operação','data operacao','dt movimento','dt lancamento'],
+  descricao:['descricao','descrição','description','historico','histórico','lancamento','lançamento','transacao','transação','detalhes','detalhe','memo','name','merchant','nome','estabelecimento','favorecido','beneficiario','beneficiário','beneficiary','origem destino','descrição da transação'],
+  complemento:['complemento','complement','notes','note','observacao','observação','informacoes adicionais','informações adicionais','detalhes adicionais','referencia','referência'],
+  valor:['valor','amount','montante','valor lancamento','valor lançamento','valor movimento','valor transacao','valor da transação'],
+  credito:['credito','crédito','creditos','créditos','entrada','entradas','valor credito','valor crédito','credit'],
+  debito:['debito','débito','debitos','débitos','saida','saída','saidas','saídas','valor debito','valor débito','debit'],
+  tipo:['tipo','natureza','operacao','operação','credito debito','crédito débito','entrada saida','entrada saída','tipo transacao','tipo da transação','dc','d c'],
+  id:['id','identificador','id transacao','id da transação','fitid','documento','numero documento','número documento','nsu','codigo','código','transaction id','referencia transacao'],
+  saldo:['saldo','balance','saldo conta','saldo da conta','saldo apos lancamento','saldo após lançamento','saldo disponivel','saldo disponível']
+};
+function limparTextoCSV(valor){
+  return String(valor??'').replace(/^\uFEFF/,'').replace(/[\u200B-\u200D\u2060]/g,'').replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
+}
+function normalizarCabecalhoCSV(valor){
+  return limparTextoCSV(valor).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[_/\\|:;,.()\[\]{}\-]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function parseCSVLinhas(texto,delimitador){
+  const linhas=[];let linha=[];let campo='';let aspas=false;
+  const conteudo=String(texto||'').replace(/^\uFEFF/,'');
+  for(let i=0;i<conteudo.length;i++){
+    const c=conteudo[i];
+    if(aspas){
+      if(c==='"'&&conteudo[i+1]==='"'){campo+='"';i++;}
+      else if(c==='"')aspas=false;
+      else campo+=c;
+    }else{
+      if(c==='"')aspas=true;
+      else if(c===delimitador){linha.push(limparTextoCSV(campo));campo='';}
+      else if(c==='\n'){
+        linha.push(limparTextoCSV(campo));campo='';
+        if(linha.some(v=>v!==''))linhas.push(linha);
+        linha=[];
+      }else if(c!=='\r')campo+=c;
+    }
+  }
+  linha.push(limparTextoCSV(campo));
+  if(linha.some(v=>v!==''))linhas.push(linha);
+  return linhas;
+}
+function modaNumerica(valores){
+  const contagem=new Map();
+  valores.forEach(v=>contagem.set(v,(contagem.get(v)||0)+1));
+  return[...contagem.entries()].sort((a,b)=>b[1]-a[1]||b[0]-a[0])[0]||[0,0];
+}
+function detectarDelimitadorCSV(texto){
+  const amostra=String(texto||'').slice(0,250000);
+  const candidatos=[';',',','\t','|'];
+  let melhor=null;
+  candidatos.forEach(delimitador=>{
+    const linhas=parseCSVLinhas(amostra,delimitador).slice(0,80);
+    const contagens=linhas.map(l=>l.length).filter(n=>n>1);
+    if(!contagens.length)return;
+    const[moda,frequencia]=modaNumerica(contagens);
+    const consistencia=frequencia/Math.max(1,contagens.length);
+    const score=consistencia*100+Math.min(moda,20)+(frequencia>=3?20:0);
+    if(!melhor||score>melhor.score)melhor={delimitador,score,colunas:moda};
+  });
+  if(!melhor)throw new Error('Não foi possível identificar as colunas do CSV. Confirme se o arquivo possui separador por ponto e vírgula, vírgula, tabulação ou barra vertical.');
+  return melhor.delimitador;
+}
+function scoreAliasCSV(cabecalho,tipo){
+  const n=normalizarCabecalhoCSV(cabecalho);
+  if(!n)return 0;
+  let melhor=0;
+  (ALIASES_CSV[tipo]||[]).forEach(alias=>{
+    const a=normalizarCabecalhoCSV(alias);
+    if(n===a)melhor=Math.max(melhor,100);
+    else if(n.startsWith(a+' ')||n.endsWith(' '+a))melhor=Math.max(melhor,82);
+    else if(n.includes(a))melhor=Math.max(melhor,65);
+  });
+  return melhor;
+}
+function detectarCabecalhoCSV(linhas){
+  let melhor={indice:0,score:-Infinity};
+  linhas.slice(0,40).forEach((linha,indice)=>{
+    const tipos=['data','descricao','valor','credito','debito','tipo','id','saldo'];
+    const encontrados=tipos.filter(tipo=>linha.some(c=>scoreAliasCSV(c,tipo)>=65));
+    const temData=encontrados.includes('data');
+    const temValor=encontrados.some(t=>['valor','credito','debito'].includes(t));
+    const preenchidos=linha.filter(c=>limparTextoCSV(c)!=='').length;
+    const score=encontrados.length*12+(temData?28:0)+(temValor?28:0)+(preenchidos>=3?8:0)-indice*.15;
+    if(score>melhor.score)melhor={indice,score};
+  });
+  return melhor.indice;
+}
+function cabecalhosUnicosCSV(linha){
+  const usados={};
+  return(linha||[]).map((valor,indice)=>{
+    const base=limparTextoCSV(valor)||('Coluna '+(indice+1));
+    const chave=base.toLowerCase();usados[chave]=(usados[chave]||0)+1;
+    return usados[chave]>1?base+' ('+usados[chave]+')':base;
+  });
+}
+function melhorColunaCSV(cabecalhos,tipo,excluir=[]){
+  let melhor={indice:-1,score:0};
+  cabecalhos.forEach((cabecalho,indice)=>{
+    if(excluir.includes(indice))return;
+    const score=scoreAliasCSV(cabecalho,tipo);
+    if(score>melhor.score)melhor={indice,score};
+  });
+  return melhor.score>=60?melhor.indice:-1;
+}
+function mapearColunasCSV(cabecalhos){
+  const data=melhorColunaCSV(cabecalhos,'data');
+  const descricao=melhorColunaCSV(cabecalhos,'descricao');
+  const complemento=melhorColunaCSV(cabecalhos,'complemento',[descricao]);
+  const credito=melhorColunaCSV(cabecalhos,'credito');
+  const debito=melhorColunaCSV(cabecalhos,'debito',[credito]);
+  const valor=melhorColunaCSV(cabecalhos,'valor',[credito,debito]);
+  const tipo=melhorColunaCSV(cabecalhos,'tipo',[valor,credito,debito]);
+  const id=melhorColunaCSV(cabecalhos,'id',[data,descricao,complemento,valor,credito,debito,tipo]);
+  const saldo=melhorColunaCSV(cabecalhos,'saldo',[valor,credito,debito]);
+  const layout=credito>=0||debito>=0?'separado':'unico';
+  return{data,descricao,complemento,layout,valor,credito,debito,tipo,id,saldo};
+}
+function parseDataCSV(valor){
+  let texto=limparTextoCSV(valor);
+  if(!texto)return'';
+  if(/^\d{5}(?:[.,]\d+)?$/.test(texto)){
+    const serial=Number(texto.replace(',','.'));
+    if(serial>=20000&&serial<=80000){
+      const data=new Date(Date.UTC(1899,11,30)+Math.floor(serial)*86400000);
+      return data.toISOString().slice(0,10);
+    }
+  }
+  texto=texto.replace(/[T ]\d{1,2}:\d{2}(?::\d{2})?.*$/,'').trim();
+  let m=texto.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  let ano,mes,dia;
+  if(m){ano=+m[1];mes=+m[2];dia=+m[3];}
+  else{
+    m=texto.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/);
+    if(m){dia=+m[1];mes=+m[2];ano=+m[3];if(ano<100)ano+=ano>=70?1900:2000;}
+  }
+  if(!m){
+    const meses={jan:1,janeiro:1,fev:2,fevereiro:2,mar:3,marco:3,abr:4,abril:4,mai:5,maio:5,jun:6,junho:6,jul:7,julho:7,ago:8,agosto:8,set:9,setembro:9,out:10,outubro:10,nov:11,novembro:11,dez:12,dezembro:12};
+    const n=normalizarCabecalhoCSV(texto);const p=n.match(/^(\d{1,2})\s+([a-z]+)\s+(\d{2}|\d{4})$/);
+    if(p&&meses[p[2]]){dia=+p[1];mes=meses[p[2]];ano=+p[3];if(ano<100)ano+=ano>=70?1900:2000;m=p;}
+  }
+  if(!m||!ano||!mes||!dia)return'';
+  const data=new Date(Date.UTC(ano,mes-1,dia));
+  if(data.getUTCFullYear()!==ano||data.getUTCMonth()!==mes-1||data.getUTCDate()!==dia)return'';
+  return String(ano).padStart(4,'0')+'-'+String(mes).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
+}
+function parseNumeroMoedaCSV(valor){
+  let texto=limparTextoCSV(valor);
+  if(!texto)return null;
+  let negativo=/^\(.*\)$/.test(texto)||/^\s*-/.test(texto)||/-\s*$/.test(texto)||/\b(D|DB|DEBITO|DÉBITO)\b/i.test(texto);
+  texto=texto.replace(/^\((.*)\)$/,'$1').replace(/[R$€£¥\s]/g,'').replace(/\b(CR|CREDITO|CRÉDITO|DB|DEBITO|DÉBITO)\b/gi,'').replace(/[^0-9,.-]/g,'');
+  texto=texto.replace(/-/g,'');
+  if(!texto)return null;
+  const ultimaVirgula=texto.lastIndexOf(',');
+  const ultimoPonto=texto.lastIndexOf('.');
+  let decimal='';
+  if(ultimaVirgula>=0&&ultimoPonto>=0)decimal=ultimaVirgula>ultimoPonto?',':'.';
+  else if(ultimaVirgula>=0){const casas=texto.length-ultimaVirgula-1;decimal=casas>=1&&casas<=2?',':'';}
+  else if(ultimoPonto>=0){const casas=texto.length-ultimoPonto-1;decimal=casas>=1&&casas<=2?'.':'';}
+  if(decimal===',')texto=texto.replace(/\./g,'').replace(',','.');
+  else if(decimal==='.')texto=texto.replace(/,/g,'');
+  else texto=texto.replace(/[.,]/g,'');
+  const numero=Number(texto);
+  if(!Number.isFinite(numero))return null;
+  return negativo?-Math.abs(numero):numero;
+}
+function interpretarTipoCSV(valor){
+  const n=normalizarCabecalhoCSV(valor);
+  if(!n)return'';
+  if(['c','cr','credito','credit','entrada','receita','recebimento','recebido','deposito','pix recebido','transferencia recebida'].includes(n))return'entrada';
+  if(['d','db','debito','debit','saida','despesa','pagamento','pago','pix enviado','transferencia enviada','compra','saque'].includes(n))return'saida';
+  if(/\b(credito|entrada|recebid|deposito)\b/.test(n))return'entrada';
+  if(/\b(debito|saida|pagamento|pago|enviado|compra|saque)\b/.test(n))return'saida';
+  return'';
+}
+function descricaoLinhaEspecialCSV(descricao){
+  const n=normalizarCabecalhoCSV(descricao);
+  if(!n)return'';
+  if(/^(saldo|saldo anterior|saldo inicial|saldo final|saldo atual|saldo disponivel|saldo em conta)$/.test(n))return'saldo';
+  if(/^(total|total geral|subtotal|total entradas|total de entradas|total saidas|total de saidas|resumo)$/.test(n))return'total';
+  return'';
+}
+function valorCelulaCSV(linha,indice){return indice>=0&&indice<linha.length?linha[indice]:'';}
+function baseChaveCSV(transacao){
+  return['CSV',transacao.data,Number(transacao.valorAssinado||0).toFixed(2),normalizarCabecalhoCSV(transacao.descricao)].join('|');
+}
+function interpretarCSV(contexto,mapeamento){
+  const erros=[];
+  if(mapeamento.data<0)erros.push('Selecione a coluna de data.');
+  if(mapeamento.descricao<0)erros.push('Selecione a coluna de descrição.');
+  if(mapeamento.layout==='separado'){
+    if(mapeamento.credito<0&&mapeamento.debito<0)erros.push('Selecione ao menos uma coluna de crédito ou débito.');
+  }else if(mapeamento.valor<0)erros.push('Selecione a coluna de valor.');
+  const ignoradas=[];const transacoes=[];const vistosId=new Set();const ocorrencias=new Map();let duplicadasArquivo=0;
+  let saldoFinal=null;let saldoData='';let periodoInicio='';let periodoFim='';
+  const linhas=contexto.linhas;
+  for(let indice=contexto.headerIndex+1;indice<linhas.length;indice++){
+    const linha=linhas[indice];const numeroLinha=indice+1;
+    if(!linha||!linha.some(c=>limparTextoCSV(c)!=='')){ignoradas.push({linha:numeroLinha,motivo:'Linha vazia'});continue;}
+    const data=parseDataCSV(valorCelulaCSV(linha,mapeamento.data));
+    const partes=[valorCelulaCSV(linha,mapeamento.descricao),valorCelulaCSV(linha,mapeamento.complemento)].map(limparTextoCSV).filter(Boolean);
+    const descricao=[...new Set(partes)].join(' — ');
+    const especial=descricaoLinhaEspecialCSV(descricao);
+    const saldoLinha=mapeamento.saldo>=0?parseNumeroMoedaCSV(valorCelulaCSV(linha,mapeamento.saldo)):null;
+    if(saldoLinha!==null){saldoFinal=saldoLinha;if(data)saldoData=data;}
+    let valorAssinado=null;let tipo='';let conflito=false;
+    if(mapeamento.layout==='separado'){
+      const credito=parseNumeroMoedaCSV(valorCelulaCSV(linha,mapeamento.credito));
+      const debito=parseNumeroMoedaCSV(valorCelulaCSV(linha,mapeamento.debito));
+      const temCredito=credito!==null&&Math.abs(credito)>0;
+      const temDebito=debito!==null&&Math.abs(debito)>0;
+      if(temCredito&&temDebito)conflito=true;
+      else if(temCredito){tipo='entrada';valorAssinado=Math.abs(credito);}
+      else if(temDebito){tipo='saida';valorAssinado=-Math.abs(debito);}
+    }else{
+      const valor=parseNumeroMoedaCSV(valorCelulaCSV(linha,mapeamento.valor));
+      const tipoExplicito=mapeamento.tipo>=0?interpretarTipoCSV(valorCelulaCSV(linha,mapeamento.tipo)):'';
+      if(valor!==null&&Math.abs(valor)>0){
+        if(tipoExplicito){tipo=tipoExplicito;valorAssinado=tipo==='entrada'?Math.abs(valor):-Math.abs(valor);}
+        else{tipo=valor>=0?'entrada':'saida';valorAssinado=valor;}
+      }
+    }
+    if(especial==='saldo'){
+      if(saldoFinal===null&&valorAssinado!==null){saldoFinal=valorAssinado;saldoData=data||saldoData;}
+      ignoradas.push({linha:numeroLinha,motivo:'Linha de saldo removida da lista de transações'});continue;
+    }
+    if(especial==='total'){ignoradas.push({linha:numeroLinha,motivo:'Linha de totalização removida'});continue;}
+    if(conflito){ignoradas.push({linha:numeroLinha,motivo:'Crédito e débito preenchidos na mesma linha'});continue;}
+    if(!data){ignoradas.push({linha:numeroLinha,motivo:'Data ausente ou inválida'});continue;}
+    if(!descricao){ignoradas.push({linha:numeroLinha,motivo:'Descrição ausente'});continue;}
+    if(valorAssinado===null||!Number.isFinite(valorAssinado)||Math.abs(valorAssinado)<=0){ignoradas.push({linha:numeroLinha,motivo:'Valor ausente, inválido ou zerado'});continue;}
+    const fitid=limparTextoCSV(valorCelulaCSV(linha,mapeamento.id));
+    const transacao={data,descricao,valorAssinado,valor:Math.abs(valorAssinado),tipo,fitid,trnType:limparTextoCSV(valorCelulaCSV(linha,mapeamento.tipo)),indiceArquivo:numeroLinha,origemFormato:'CSV'};
+    if(fitid){
+      transacao.chaveUnica='CSV|ID|'+fitid;
+      if(vistosId.has(transacao.chaveUnica)){duplicadasArquivo++;ignoradas.push({linha:numeroLinha,motivo:'Identificador repetido dentro do arquivo'});continue;}
+      vistosId.add(transacao.chaveUnica);
+    }else{
+      const base=baseChaveCSV(transacao);const ocorrencia=(ocorrencias.get(base)||0)+1;ocorrencias.set(base,ocorrencia);
+      transacao.chaveUnica=base+'|OCORRENCIA|'+ocorrencia;
+    }
+    transacoes.push(transacao);
+    if(!periodoInicio||data<periodoInicio)periodoInicio=data;
+    if(!periodoFim||data>periodoFim)periodoFim=data;
+  }
+  const referencia=periodoFim||saldoData||hoje();const refDate=new Date(referencia+'T12:00:00');
+  return{
+    nomeArquivo:contexto.nomeArquivo,formatoArquivo:'CSV',conta:'',banco:'',moeda:'BRL',periodoInicio,periodoFim,saldoFinal,saldoData,
+    transacoes,duplicadasArquivo,linhasIgnoradas:ignoradas.length,detalhesIgnorados:ignoradas.slice(0,30),errosMapeamento:erros,
+    mesReferencia:refDate.getMonth()+1,anoReferencia:refDate.getFullYear(),csvContext:contexto
+  };
+}
+function prepararImportacaoCSV(conteudo,nomeArquivo){
+  const delimitador=detectarDelimitadorCSV(conteudo);
+  const linhas=parseCSVLinhas(conteudo,delimitador);
+  if(linhas.length<2)throw new Error('O CSV não possui linhas suficientes para formar um extrato.');
+  const headerIndex=detectarCabecalhoCSV(linhas);
+  const cabecalhos=cabecalhosUnicosCSV(linhas[headerIndex]);
+  const mapeamento=mapearColunasCSV(cabecalhos);
+  const contexto={nomeArquivo,delimitador,linhas,headerIndex,cabecalhos,mapeamento};
+  return interpretarCSV(contexto,mapeamento);
+}
+function simboloDelimitadorCSV(valor){return valor==='\t'?'Tabulação':valor===';'?'Ponto e vírgula (;)':valor===','?'Vírgula (,)':'Barra vertical (|)';}
+function opcoesColunasCSV(cabecalhos,selecionado,opcional=true){
+  return'<option value="-1">'+(opcional?'Não utilizar':'Selecione a coluna')+'</option>'+cabecalhos.map((c,i)=>'<option value="'+i+'" '+(Number(selecionado)===i?'selected':'')+'>'+escapeHTML(c)+'</option>').join('');
+}
+function htmlMapeamentoCSV(d){
+  const c=d.csvContext;const m=c.mapeamento;const separado=m.layout==='separado';
+  return '<div class="bank-csv-map">'+
+    '<div class="section-header" style="margin-bottom:12px;"><div><div class="section-title">Conferência das colunas do CSV</div><div class="text-muted" style="margin-top:4px;">Revise o mapeamento antes de salvar. O arquivo original não é alterado.</div></div><span class="bank-period-pill">Cabeçalho: linha '+(c.headerIndex+1)+'</span></div>'+
+    '<div class="bank-csv-meta">Separador detectado: <strong>'+escapeHTML(simboloDelimitadorCSV(c.delimitador))+'</strong> · '+c.cabecalhos.length+' coluna(s) · '+c.linhas.length+' linha(s) com conteúdo</div>'+
+    '<div class="form-row" style="margin-top:12px;"><div class="form-group"><label class="form-label">Linha do cabeçalho</label><div class="bank-inline-field"><input type="number" class="form-control" id="bancoLinhaCabecalho" min="1" max="'+Math.min(c.linhas.length,60)+'" value="'+(c.headerIndex+1)+'"><button type="button" class="btn btn-ghost" onclick="reprocessarCabecalhoCSV()">Aplicar</button></div></div><div class="form-group"><label class="form-label">Como os valores estão organizados?</label><select class="form-control" id="bancoLayoutValores"><option value="unico" '+(!separado?'selected':'')+'>Uma coluna de valor, com sinal ou tipo</option><option value="separado" '+(separado?'selected':'')+'>Colunas separadas de crédito e débito</option></select></div></div>'+
+    '<div class="bank-map-grid">'+
+      '<div class="form-group"><label class="form-label">Data *</label><select class="form-control" id="bancoColData">'+opcoesColunasCSV(c.cabecalhos,m.data,false)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Descrição *</label><select class="form-control" id="bancoColDescricao">'+opcoesColunasCSV(c.cabecalhos,m.descricao,false)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Complemento</label><select class="form-control" id="bancoColComplemento">'+opcoesColunasCSV(c.cabecalhos,m.complemento,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Identificador</label><select class="form-control" id="bancoColId">'+opcoesColunasCSV(c.cabecalhos,m.id,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Valor</label><select class="form-control" id="bancoColValor">'+opcoesColunasCSV(c.cabecalhos,m.valor,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Tipo: entrada/saída</label><select class="form-control" id="bancoColTipo">'+opcoesColunasCSV(c.cabecalhos,m.tipo,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Crédito/entrada</label><select class="form-control" id="bancoColCredito">'+opcoesColunasCSV(c.cabecalhos,m.credito,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Débito/saída</label><select class="form-control" id="bancoColDebito">'+opcoesColunasCSV(c.cabecalhos,m.debito,true)+'</select></div>'+
+      '<div class="form-group"><label class="form-label">Saldo após movimentação</label><select class="form-control" id="bancoColSaldo">'+opcoesColunasCSV(c.cabecalhos,m.saldo,true)+'</select></div>'+
+    '</div>'+
+    '<div class="bank-map-actions"><div class="text-muted">Serão mantidos somente data, descrição, tipo, valor, identificador e saldo. Linhas vazias, cabeçalhos repetidos, totais e saldos não entram como transações.</div><button type="button" class="btn btn-outline" onclick="atualizarMapeamentoCSV()">&#8635; Refazer leitura</button></div>'+
+  '</div>';
+}
+function lerMapeamentoCSVDoFormulario(){
+  const numero=id=>Number(document.getElementById(id)?.value??-1);
+  return{data:numero('bancoColData'),descricao:numero('bancoColDescricao'),complemento:numero('bancoColComplemento'),layout:document.getElementById('bancoLayoutValores')?.value==='separado'?'separado':'unico',valor:numero('bancoColValor'),credito:numero('bancoColCredito'),debito:numero('bancoColDebito'),tipo:numero('bancoColTipo'),id:numero('bancoColId'),saldo:numero('bancoColSaldo')};
+}
+function marcarDuplicadasBanco(dados){
+  const existentes=new Set((bancoDB.transacoes||[]).map(t=>t.chaveUnica).filter(Boolean));
+  dados.transacoes.forEach(t=>{t.duplicada=existentes.has(t.chaveUnica);});
+  dados.duplicadasExistentes=dados.transacoes.filter(t=>t.duplicada).length;
+  return dados;
+}
+function atualizarMapeamentoCSV(){
+  const atual=_preImportacaoBanco;if(!atual?.csvContext)return;
+  const contexto=atual.csvContext;contexto.mapeamento=lerMapeamentoCSVDoFormulario();
+  _preImportacaoBanco=marcarDuplicadasBanco(interpretarCSV(contexto,contexto.mapeamento));
+  renderPreviaImportacaoBanco();
+}
+function reprocessarCabecalhoCSV(){
+  const atual=_preImportacaoBanco;if(!atual?.csvContext)return;
+  const contexto=atual.csvContext;
+  const linha=Number(document.getElementById('bancoLinhaCabecalho')?.value||contexto.headerIndex+1);
+  if(!Number.isInteger(linha)||linha<1||linha>Math.min(contexto.linhas.length,60)){alert('Informe uma linha de cabeçalho válida.');return;}
+  contexto.headerIndex=linha-1;contexto.cabecalhos=cabecalhosUnicosCSV(contexto.linhas[contexto.headerIndex]);contexto.mapeamento=mapearColunasCSV(contexto.cabecalhos);
+  _preImportacaoBanco=marcarDuplicadasBanco(interpretarCSV(contexto,contexto.mapeamento));
+  renderPreviaImportacaoBanco();
+}
+async function lerArquivoBanco(arquivo){
+  if(!arquivo)throw new Error('Selecione um arquivo OFX, QFX ou CSV.');
+  if(arquivo.size>15*1024*1024)throw new Error('O arquivo excede o limite de 15 MB.');
+  const extensao=(String(arquivo.name||'').match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
+  if(!['ofx','qfx','csv'].includes(extensao))throw new Error('Utilize um arquivo com extensão .OFX, .QFX ou .CSV.');
   const buffer=await arquivo.arrayBuffer();
+  if(extensao==='csv'){
+    try{return{extensao,conteudo:new TextDecoder('utf-8',{fatal:true}).decode(buffer)};}
+    catch(erro){return{extensao,conteudo:new TextDecoder('windows-1252').decode(buffer)};}
+  }
   const inicio=new TextDecoder('windows-1252').decode(buffer.slice(0,1200));
   const usa1252=/CHARSET:\s*(1252|WINDOWS-1252)|ENCODING:\s*USASCII/i.test(inicio);
-  try{return new TextDecoder(usa1252?'windows-1252':'utf-8',{fatal:false}).decode(buffer);}
-  catch(erro){return new TextDecoder('windows-1252').decode(buffer);}
+  try{return{extensao,conteudo:new TextDecoder(usa1252?'windows-1252':'utf-8',{fatal:false}).decode(buffer)};}
+  catch(erro){return{extensao,conteudo:new TextDecoder('windows-1252').decode(buffer)};}
 }
 function transacoesBancoPeriodo(){
   return(bancoDB.transacoes||[]).filter(t=>{
@@ -2960,9 +3289,9 @@ function resumoBancoPeriodo(){
 }
 function pgAppBanco(){
   if(!podeVerAppBanco()){navigate('dashboard');return;}
-  document.getElementById('topbarActions').innerHTML=temPermissao('app_banco_gerenciar')?'<button class="btn btn-primary" onclick="abrirImportacaoBanco()">&#8679; Importar OFX</button>':'';
+  document.getElementById('topbarActions').innerHTML=temPermissao('app_banco_gerenciar')?'<button class="btn btn-primary" onclick="abrirImportacaoBanco()">&#8679; Importar OFX/CSV</button>':'';
   document.getElementById('pageContent').innerHTML='<div class="page">'+
-    '<div class="alert alert-verde"><strong>Espelho consultivo do banco.</strong>&nbsp; Estes dados são salvos separadamente e não alteram o dashboard, os lançamentos ou os relatórios financeiros do sistema.</div>'+
+    '<div class="alert alert-verde"><strong>Espelho consultivo do banco.</strong>&nbsp; Os extratos OFX e CSV são limpos e salvos separadamente. Eles não alteram o dashboard, os lançamentos ou os relatórios financeiros do sistema.</div>'+
     '<div class="grid-4 mb-6" id="bancoMetricas"></div>'+
     '<div class="card mb-6">'+
       '<div class="section-header"><div><div class="section-title">Transações do extrato</div><div class="text-muted" style="margin-top:4px;">'+mesNome(filtroMes)+' de '+filtroAno+'</div></div></div>'+
@@ -2981,28 +3310,34 @@ function renderMetricasBanco(){
   const el=document.getElementById('bancoMetricas');if(!el)return;
   const r=resumoBancoPeriodo();
   const saldo=r.saldoFinal===null?'<div class="metric-value bank-saldo-indisponivel">Não informado</div>':'<div class="metric-value '+(r.saldoFinal>=0?'positivo':'negativo')+'">'+fmt(r.saldoFinal)+'</div>';
-  const fonte=r.importacaoSaldo?'<div class="bank-balance-source"><span class="bank-period-pill">Saldo do OFX</span><span>'+escapeHTML(r.importacaoSaldo.nomeArquivo||'Extrato')+(r.importacaoSaldo.saldoData?' em '+fmtData(r.importacaoSaldo.saldoData):'')+'</span></div>':'<div class="metric-sub">O banco não informou saldo no extrato deste mês.</div>';
+  const formato=r.importacaoSaldo?.formatoArquivo||'extrato';
+  const fonte=r.importacaoSaldo?'<div class="bank-balance-source"><span class="bank-period-pill">Saldo do '+escapeHTML(formato)+'</span><span>'+escapeHTML(r.importacaoSaldo.nomeArquivo||'Extrato')+(r.importacaoSaldo.saldoData?' em '+fmtData(r.importacaoSaldo.saldoData):'')+'</span></div>':'<div class="metric-sub">O arquivo não informou saldo bancário neste mês.</div>';
   el.innerHTML='<div class="metric"><div class="metric-label">Total de entradas</div><div class="metric-value positivo">'+fmt(r.entradas)+'</div><div class="metric-sub">'+r.total+' transação(ões) no período</div></div>'+
-    '<div class="metric"><div class="metric-label">Total de saídas</div><div class="metric-value negativo">'+fmt(r.saidas)+'</div><div class="metric-sub">Valores identificados pelo sinal do OFX</div></div>'+
+    '<div class="metric"><div class="metric-label">Total de saídas</div><div class="metric-value negativo">'+fmt(r.saidas)+'</div><div class="metric-sub">Classificação conferida na importação</div></div>'+
     '<div class="metric"><div class="metric-label">Movimentação líquida</div><div class="metric-value '+(r.liquido>=0?'positivo':'negativo')+'">'+fmt(r.liquido)+'</div><div class="metric-sub">Entradas menos saídas do mês</div></div>'+
     '<div class="metric"><div class="metric-label">Total no caixa bancário</div>'+saldo+fonte+'</div>';
 }
 function transacoesBancoFiltradas(){
   const busca=String(filtroBuscaBanco||'').toLowerCase().trim();
-  return transacoesBancoPeriodo().filter(t=>(filtroTipoBanco==='todos'||t.tipo===filtroTipoBanco)&&(!busca||[t.descricao,t.fitid,t.trnType,t.nomeArquivo].some(v=>String(v||'').toLowerCase().includes(busca)))).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))||Number(b.importadoEm||0)-Number(a.importadoEm||0));
+  return transacoesBancoPeriodo().filter(t=>(filtroTipoBanco==='todos'||t.tipo===filtroTipoBanco)&&(!busca||[t.descricao,t.fitid,t.trnType,t.nomeArquivo,t.origemFormato].some(v=>String(v||'').toLowerCase().includes(busca)))).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))||Number(b.importadoEm||0)-Number(a.importadoEm||0));
 }
 function renderTabelaBanco(){
   const el=document.getElementById('bancoTabela');if(!el)return;
   const dados=transacoesBancoFiltradas();
   if(!dados.length){el.innerHTML='<div class="empty"><div class="empty-icon">&#127974;</div><div>Nenhuma transação encontrada para este período.</div></div>';return;}
-  el.innerHTML='<div class="table-wrap"><table><thead><tr><th>Data</th><th>Transação</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+dados.map(t=>'<tr><td style="white-space:nowrap;">'+fmtData(t.data)+'</td><td><div class="bank-transaction-desc">'+escapeHTML(t.descricao||'Transação bancária')+'</div><div class="bank-transaction-id">'+escapeHTML(t.fitid?'ID '+t.fitid:(t.trnType||'Sem identificador bancário'))+'</div></td><td><span class="badge '+(t.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(t.tipo==='entrada'?'Entrada':'Saída')+'</span></td><td style="text-align:right;white-space:nowrap;" class="'+(t.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(t.tipo==='entrada'?'+ ':'- ')+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>';
+  el.innerHTML='<div class="table-wrap"><table><thead><tr><th>Data</th><th>Transação</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+dados.map(t=>'<tr><td style="white-space:nowrap;">'+fmtData(t.data)+'</td><td><div class="bank-transaction-desc">'+escapeHTML(t.descricao||'Transação bancária')+'</div><div class="bank-transaction-id">'+escapeHTML(t.fitid?'ID '+t.fitid:((t.origemFormato||t.trnType||'Extrato')+' · sem identificador bancário'))+'</div></td><td><span class="badge '+(t.tipo==='entrada'?'badge-verde':'badge-vermelho')+'">'+(t.tipo==='entrada'?'Entrada':'Saída')+'</span></td><td style="text-align:right;white-space:nowrap;" class="'+(t.tipo==='entrada'?'valor-positivo':'valor-negativo')+'">'+(t.tipo==='entrada'?'+ ':'- ')+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>';
 }
 function renderImportacoesBanco(){
   const el=document.getElementById('bancoImportacoes');if(!el)return;
   const imports=importacoesBancoPeriodo();
   const botaoImportar=temPermissao('app_banco_gerenciar')?'<button class="btn btn-sm btn-primary" onclick="abrirImportacaoBanco()">&#8679; Importar extrato</button>':'';
-  el.innerHTML='<div class="section-header"><div><div class="section-title">Arquivos importados</div><div class="text-muted" style="margin-top:4px;">Origem e histórico dos dados exibidos neste mês.</div></div>'+botaoImportar+'</div>'+
-    (!imports.length?'<div class="report-empty">Nenhum arquivo OFX foi importado para '+mesNome(filtroMes)+' de '+filtroAno+'.</div>':'<div class="bank-import-list">'+imports.map(i=>'<div class="bank-import-item"><div><div class="bank-file-name">'+escapeHTML(i.nomeArquivo||'Extrato OFX')+'</div><div class="bank-import-meta">Importado por '+escapeHTML(i.importadoPorEmail||'usuário não identificado')+' em '+escapeHTML(fmtDataHoraAuditoria(i.importadoEm))+'<br>'+Number(i.totalTransacoes||0)+' transação(ões) adicionada(s)'+(i.duplicadasIgnoradas?' · '+Number(i.duplicadasIgnoradas)+' duplicada(s) ignorada(s)':'')+(i.saldoFinal!==null&&i.saldoFinal!==undefined?' · Saldo OFX: '+fmt(i.saldoFinal):' · Saldo não informado pelo banco')+'</div></div>'+(temPermissao('app_banco_gerenciar')?'<button class="btn btn-sm btn-danger" onclick="excluirImportacaoBanco(\''+escapeAttr(i.id)+'\')">Excluir importação</button>':'')+'</div>').join('')+'</div>');
+  el.innerHTML='<div class="section-header"><div><div class="section-title">Arquivos importados</div><div class="text-muted" style="margin-top:4px;">Origem, limpeza e histórico dos dados exibidos neste mês.</div></div>'+botaoImportar+'</div>'+
+    (!imports.length?'<div class="report-empty">Nenhum arquivo OFX ou CSV foi importado para '+mesNome(filtroMes)+' de '+filtroAno+'.</div>':'<div class="bank-import-list">'+imports.map(i=>{
+      const formato=i.formatoArquivo||(/\.csv$/i.test(i.nomeArquivo||'')?'CSV':'OFX');
+      const limpeza=Number(i.linhasIgnoradas||0)>0?' · '+Number(i.linhasIgnoradas)+' linha(s) descartada(s) na limpeza':'';
+      const saldo=i.saldoFinal!==null&&i.saldoFinal!==undefined?' · Saldo '+formato+': '+fmt(i.saldoFinal):' · Saldo não informado pelo arquivo';
+      return '<div class="bank-import-item"><div><div class="bank-file-name"><span class="badge badge-azul" style="margin-right:7px;">'+escapeHTML(formato)+'</span>'+escapeHTML(i.nomeArquivo||'Extrato bancário')+'</div><div class="bank-import-meta">Importado por '+escapeHTML(i.importadoPorEmail||'usuário não identificado')+' em '+escapeHTML(fmtDataHoraAuditoria(i.importadoEm))+'<br>'+Number(i.totalTransacoes||0)+' transação(ões) adicionada(s)'+(i.duplicadasIgnoradas?' · '+Number(i.duplicadasIgnoradas)+' duplicada(s) ignorada(s)':'')+limpeza+saldo+'</div></div>'+(temPermissao('app_banco_gerenciar')?'<button class="btn btn-sm btn-danger" onclick="excluirImportacaoBanco(\''+escapeAttr(i.id)+'\')">Excluir importação</button>':'')+'</div>';
+    }).join('')+'</div>');
 }
 function filtrarBuscaBanco(valor){filtroBuscaBanco=String(valor||'');renderTabelaBanco();}
 function setFiltroTipoBanco(valor){filtroTipoBanco=['entrada','saida'].includes(valor)?valor:'todos';renderTabelaBanco();}
@@ -3010,24 +3345,22 @@ function abrirImportacaoBanco(){
   if(!exigirPermissao('app_banco_gerenciar','importar extratos bancários'))return;
   _preImportacaoBanco=null;
   openModal('Importar extrato bancário',
-    '<div class="bank-import-card card card-sm"><div class="section-title">&#127974; Selecione o extrato OFX</div><p class="text-muted" style="margin-top:8px;line-height:1.5;">Exporte o extrato diretamente no aplicativo ou internet banking. O sistema aceita arquivos <strong>.OFX</strong> e <strong>.QFX</strong>.</p><div class="form-group" style="margin-top:16px;margin-bottom:0;"><label class="form-label" for="arquivoBanco">Arquivo do banco</label><input type="file" class="form-control" id="arquivoBanco" accept=".ofx,.qfx,application/x-ofx" onchange="processarArquivoBanco(this.files[0])"></div><div class="bank-format-note"><strong>PDF não é aceito nesta versão.</strong> O OFX contém datas, valores, identificadores e saldo em campos estruturados, reduzindo erros de leitura.</div></div><div id="statusImportacaoBanco" class="text-muted" style="margin-top:14px;">Nenhum arquivo selecionado.</div>',
+    '<div class="bank-import-card card card-sm"><div class="section-title">&#127974; Selecione o extrato do banco</div><p class="text-muted" style="margin-top:8px;line-height:1.5;">O sistema aceita <strong>OFX, QFX e CSV</strong>. No CSV, as colunas são detectadas automaticamente e exibidas para conferência antes de salvar.</p><div class="form-group" style="margin-top:16px;margin-bottom:0;"><label class="form-label" for="arquivoBanco">Arquivo do banco</label><input type="file" class="form-control" id="arquivoBanco" accept=".ofx,.qfx,.csv,application/x-ofx,text/csv" onchange="processarArquivoBanco(this.files[0])"></div><div class="bank-format-note"><strong>Limpeza segura:</strong> são mantidos somente data, descrição, entrada/saída, valor, identificador e saldo. Linhas vazias, cabeçalhos repetidos, totais e saldos isolados não viram transações.</div></div><div id="statusImportacaoBanco" class="text-muted" style="margin-top:14px;">Nenhum arquivo selecionado.</div>',
     '<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>');
 }
 async function processarArquivoBanco(arquivo){
   const status=document.getElementById('statusImportacaoBanco');
-  if(status)status.textContent='Lendo e validando o arquivo...';
+  if(status)status.textContent='Lendo, limpando e validando o arquivo...';
   try{
-    const conteudo=await lerArquivoOFX(arquivo);
-    const dados=parseOFX(conteudo,arquivo.name);
-    const existentes=new Set((bancoDB.transacoes||[]).map(t=>t.chaveUnica).filter(Boolean));
-    dados.transacoes.forEach(t=>{t.duplicada=existentes.has(t.chaveUnica);});
-    dados.duplicadasExistentes=dados.transacoes.filter(t=>t.duplicada).length;
+    const lido=await lerArquivoBanco(arquivo);
+    let dados=lido.extensao==='csv'?prepararImportacaoCSV(lido.conteudo,arquivo.name):parseOFX(lido.conteudo,arquivo.name);
+    dados=marcarDuplicadasBanco(dados);
     _preImportacaoBanco=dados;
     renderPreviaImportacaoBanco();
   }catch(erro){
-    console.error('Falha ao interpretar OFX:',erro);
+    console.error('Falha ao interpretar extrato bancário:',erro);
     _preImportacaoBanco=null;
-    if(status)status.innerHTML='<div class="alert alert-vermelho" style="margin:0;">'+escapeHTML(erro.message||'Não foi possível ler o arquivo OFX.')+'</div>';
+    if(status)status.innerHTML='<div class="alert alert-vermelho" style="margin:0;">'+escapeHTML(erro.message||'Não foi possível ler o arquivo bancário.')+'</div>';
   }
 }
 function renderPreviaImportacaoBanco(){
@@ -3037,17 +3370,23 @@ function renderPreviaImportacaoBanco(){
   const sai=novas.filter(t=>t.tipo==='saida').reduce((s,t)=>s+t.valor,0);
   const mesOpts=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'" '+(i+1===d.mesReferencia?'selected':'')+'>'+mesNome(i+1)+'</option>').join('');
   const anoAtual=getAno();const anos=[...new Set([anoAtual-2,anoAtual-1,anoAtual,anoAtual+1,d.anoReferencia])].sort((a,b)=>a-b);
-  document.getElementById('modalBody').innerHTML='<div class="alert '+(novas.length?'alert-verde':'alert-amarelo')+'"><strong>'+novas.length+' nova(s) transação(ões).</strong>&nbsp; '+(d.duplicadasExistentes+d.duplicadasArquivo)+' duplicada(s) serão ignoradas.</div>'+
+  const erros=d.errosMapeamento||[];
+  const alertaErros=erros.length?'<div class="alert alert-vermelho"><strong>Mapeamento incompleto.</strong>&nbsp; '+escapeHTML(erros.join(' '))+'</div>':'';
+  const alertaResultado=!erros.length?'<div class="alert '+(novas.length?'alert-verde':'alert-amarelo')+'"><strong>'+novas.length+' nova(s) transação(ões).</strong>&nbsp; '+Number((d.duplicadasExistentes||0)+(d.duplicadasArquivo||0))+' duplicada(s) serão ignoradas'+(d.linhasIgnoradas?' e '+d.linhasIgnoradas+' linha(s) foram descartadas na limpeza':'')+'.</div>':'';
+  const mapeamento=d.formatoArquivo==='CSV'?htmlMapeamentoCSV(d):'';
+  const detalhesIgnorados=d.formatoArquivo==='CSV'&&d.detalhesIgnorados?.length?'<details class="bank-clean-details"><summary>Ver exemplos das linhas descartadas</summary><div>'+d.detalhesIgnorados.slice(0,12).map(i=>'Linha '+i.linha+': '+escapeHTML(i.motivo)).join('<br>')+'</div></details>':'';
+  document.getElementById('modalBody').innerHTML=mapeamento+alertaErros+alertaResultado+
     '<div class="form-row"><div class="form-group"><label class="form-label">Mês de referência</label><select class="form-control" id="bancoMesReferencia">'+mesOpts+'</select></div><div class="form-group"><label class="form-label">Ano de referência</label><select class="form-control" id="bancoAnoReferencia">'+anos.map(a=>'<option value="'+a+'" '+(a===d.anoReferencia?'selected':'')+'>'+a+'</option>').join('')+'</select></div></div>'+
     '<div class="grid-3 mb-4"><div class="report-summary-box"><div class="report-summary-label">Entradas novas</div><div class="report-summary-value valor-positivo">'+fmt(ent)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Saídas novas</div><div class="report-summary-value valor-negativo">'+fmt(sai)+'</div></div><div class="report-summary-box"><div class="report-summary-label">Saldo informado</div><div class="report-summary-value">'+(d.saldoFinal===null?'Não informado':fmt(d.saldoFinal))+'</div></div></div>'+
-    '<div class="text-sm" style="margin-bottom:10px;"><strong>Arquivo:</strong> '+escapeHTML(d.nomeArquivo)+' · <strong>Conta:</strong> '+escapeHTML(d.conta?('final '+d.conta.slice(-4)):'não identificada')+' · <strong>Moeda:</strong> '+escapeHTML(d.moeda)+'</div>'+
-    '<div class="bank-preview-table"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+d.transacoes.slice(0,50).map(t=>'<tr style="'+(t.duplicada?'opacity:.5;':'')+'"><td>'+fmtData(t.data)+'</td><td>'+escapeHTML(t.descricao)+(t.duplicada?' <span class="badge badge-cinza">Já importada</span>':'')+'</td><td>'+(t.tipo==='entrada'?'Entrada':'Saída')+'</td><td style="text-align:right;">'+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>'+
-    (d.transacoes.length>50?'<div class="text-muted" style="margin-top:8px;">Prévia limitada às primeiras 50 transações.</div>':'');
-  document.getElementById('modalFooter').innerHTML='<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" '+(!novas.length?'disabled ':'')+'onclick="confirmarImportacaoBanco()">&#10003; Confirmar importação</button>';
+    '<div class="text-sm" style="margin-bottom:10px;"><strong>Arquivo:</strong> '+escapeHTML(d.nomeArquivo)+' · <strong>Formato:</strong> '+escapeHTML(d.formatoArquivo||'OFX')+' · <strong>Conta:</strong> '+escapeHTML(d.conta?('final '+d.conta.slice(-4)):'não identificada')+' · <strong>Moeda:</strong> '+escapeHTML(d.moeda||'BRL')+'</div>'+detalhesIgnorados+
+    '<div class="bank-preview-table"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th style="text-align:right;">Valor</th></tr></thead><tbody>'+d.transacoes.slice(0,80).map(t=>'<tr style="'+(t.duplicada?'opacity:.5;':'')+'"><td>'+fmtData(t.data)+'</td><td>'+escapeHTML(t.descricao)+(t.duplicada?' <span class="badge badge-cinza">Já importada</span>':'')+'</td><td>'+(t.tipo==='entrada'?'Entrada':'Saída')+'</td><td style="text-align:right;">'+fmt(t.valor)+'</td></tr>').join('')+'</tbody></table></div>'+
+    (d.transacoes.length>80?'<div class="text-muted" style="margin-top:8px;">Prévia limitada às primeiras 80 transações.</div>':'');
+  document.getElementById('modalFooter').innerHTML='<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" '+(!novas.length||erros.length?'disabled ':'')+'onclick="confirmarImportacaoBanco()">&#10003; Confirmar importação</button>';
 }
 async function confirmarImportacaoBanco(){
   if(!exigirPermissao('app_banco_gerenciar','confirmar a importação bancária'))return;
-  const d=_preImportacaoBanco;if(!d){alert('Selecione novamente o arquivo OFX.');return;}
+  const d=_preImportacaoBanco;if(!d){alert('Selecione novamente o arquivo bancário.');return;}
+  if(d.errosMapeamento?.length){alert('Revise o mapeamento das colunas antes de importar.');return;}
   const mes=Number(document.getElementById('bancoMesReferencia')?.value||d.mesReferencia);
   const ano=Number(document.getElementById('bancoAnoReferencia')?.value||d.anoReferencia);
   const existentes=new Set((bancoDB.transacoes||[]).map(t=>t.chaveUnica).filter(Boolean));
@@ -3057,18 +3396,20 @@ async function confirmarImportacaoBanco(){
   const atualizacoes={};
   novas.forEach(t=>{
     const id=uid();
-    atualizacoes['app_banco/transacoes/'+id]={id,importacaoId,data:t.data,descricao:t.descricao,valor:Number(t.valor),valorAssinado:Number(t.valorAssinado),tipo:t.tipo,fitid:t.fitid||'',trnType:t.trnType||'',chaveUnica:t.chaveUnica,nomeArquivo:d.nomeArquivo,importadoEm:agora};
+    atualizacoes['app_banco/transacoes/'+id]={id,importacaoId,data:t.data,descricao:t.descricao,valor:Number(t.valor),valorAssinado:Number(t.valorAssinado),tipo:t.tipo,fitid:t.fitid||'',trnType:t.trnType||'',chaveUnica:t.chaveUnica,nomeArquivo:d.nomeArquivo,origemFormato:d.formatoArquivo||t.origemFormato||'OFX',linhaArquivo:Number(t.indiceArquivo||0),importadoEm:agora};
   });
-  const duplicadasIgnoradas=d.duplicadasArquivo+(d.transacoes.length-novas.length);
-  atualizacoes['app_banco/importacoes/'+importacaoId]={id:importacaoId,nomeArquivo:d.nomeArquivo,mesReferencia:mes,anoReferencia:ano,periodoInicio:d.periodoInicio||'',periodoFim:d.periodoFim||'',saldoFinal:d.saldoFinal,saldoData:d.saldoData||'',contaFinal:d.conta?d.conta.slice(-4):'',banco:d.banco||'',moeda:d.moeda,totalTransacoes:novas.length,duplicadasIgnoradas,importadoEm:agora,importadoPorUid:user?.uid||'',importadoPorEmail:user?.email||''};
+  const duplicadasIgnoradas=Number(d.duplicadasArquivo||0)+(d.transacoes.length-novas.length);
+  const metaImportacao={id:importacaoId,nomeArquivo:d.nomeArquivo,formatoArquivo:d.formatoArquivo||'OFX',mesReferencia:mes,anoReferencia:ano,periodoInicio:d.periodoInicio||'',periodoFim:d.periodoFim||'',saldoFinal:d.saldoFinal,saldoData:d.saldoData||'',contaFinal:d.conta?d.conta.slice(-4):'',banco:d.banco||'',moeda:d.moeda||'BRL',totalTransacoes:novas.length,duplicadasIgnoradas,linhasIgnoradas:Number(d.linhasIgnoradas||0),importadoEm:agora,importadoPorUid:user?.uid||'',importadoPorEmail:user?.email||''};
+  if(d.csvContext){metaImportacao.linhaCabecalho=d.csvContext.headerIndex+1;metaImportacao.delimitador=d.csvContext.delimitador;metaImportacao.colunasMapeadas={...d.csvContext.mapeamento};}
+  atualizacoes['app_banco/importacoes/'+importacaoId]=metaImportacao;
   const eventoId=uid();
-  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:importacaoId,acao:'Extrato importado',descricao:d.nomeArquivo+' — '+novas.length+' transações adicionadas.',ocorridoEm:agora,usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
+  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:importacaoId,acao:'Extrato importado',descricao:d.nomeArquivo+' ('+(d.formatoArquivo||'OFX')+') — '+novas.length+' transações adicionadas e '+Number(d.linhasIgnoradas||0)+' linhas descartadas.',ocorridoEm:agora,usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
   const botao=document.querySelector('#modalFooter .btn-primary');if(botao){botao.disabled=true;botao.textContent='Importando...';}
   try{
     await update(raizRef,atualizacoes);
     filtroMes=mes;filtroAno=ano;garantirAnoFiltroGlobal(ano);atualizarSeletorGlobal();
     _preImportacaoBanco=null;closeModal();navigate('appBanco');
-    alert('Extrato importado com sucesso. '+novas.length+' transação(ões) adicionada(s) e '+duplicadasIgnoradas+' duplicada(s) ignorada(s).');
+    alert('Extrato importado com sucesso. '+novas.length+' transação(ões) adicionada(s), '+duplicadasIgnoradas+' duplicada(s) ignorada(s) e '+Number(d.linhasIgnoradas||0)+' linha(s) descartada(s) na limpeza.');
   }catch(erro){
     console.error('Falha ao salvar extrato:',erro);
     alert('Não foi possível salvar o extrato. Confirme as regras de acesso do Firebase para o nó app_banco.');
@@ -3079,11 +3420,11 @@ async function excluirImportacaoBanco(id){
   if(!exigirPermissao('app_banco_gerenciar','excluir importações bancárias'))return;
   const imp=(bancoDB.importacoes||[]).find(i=>String(i.id)===String(id));if(!imp)return;
   const relacionadas=(bancoDB.transacoes||[]).filter(t=>String(t.importacaoId)===String(id));
-  if(!confirm('Excluir o arquivo “'+(imp.nomeArquivo||'Extrato OFX')+'” e suas '+relacionadas.length+' transação(ões)? Esta ação não afeta os demais módulos.'))return;
+  if(!confirm('Excluir o arquivo “'+(imp.nomeArquivo||'Extrato bancário')+'” e suas '+relacionadas.length+' transação(ões)? Esta ação não afeta os demais módulos.'))return;
   const atualizacoes={['app_banco/importacoes/'+id]:null};
   relacionadas.forEach(t=>{atualizacoes['app_banco/transacoes/'+t.id]=null;});
   const eventoId=uid();const user=firebaseAuth.currentUser;
-  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:id,acao:'Importação excluída',descricao:(imp.nomeArquivo||'Extrato OFX')+' — '+relacionadas.length+' transações removidas.',ocorridoEm:Date.now(),usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
+  atualizacoes['auditoria_financeiro/'+eventoId]={id:eventoId,entidade:'app_banco',registroId:id,acao:'Importação excluída',descricao:(imp.nomeArquivo||'Extrato bancário')+' — '+relacionadas.length+' transações removidas.',ocorridoEm:Date.now(),usuarioUid:user?.uid||'',usuarioEmail:user?.email||''};
   try{await update(raizRef,atualizacoes);}
   catch(erro){console.error(erro);alert('Não foi possível excluir a importação. Verifique as regras do Firebase.');}
 }
@@ -3463,7 +3804,7 @@ Object.assign(window,{
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
   confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
-  abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,
+  abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,atualizarMapeamentoCSV,reprocessarCabecalhoCSV,
 });
 
 async function init(){
