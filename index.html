@@ -2789,6 +2789,14 @@ function delTrab(id){if(!exigirPermissao('trabalhadores_gerenciar','excluir trab
 function devedoresDaCantina(cantinaId){
   return (db.devedores||[]).filter(d=>String(d.cantinaId||'')===String(cantinaId));
 }
+function devedorGeradoPelaCantina(d){
+  if(!d)return false;
+  if(d.origemRegistro==='cantina_automatica')return true;
+  if(d.origemRegistro==='avulso')return false;
+  // Registros antigos da v1.7 não possuíam marcador de origem. Por segurança,
+  // dívidas vinculadas à Cantina são tratadas como automáticas até serem recriadas/ajustadas.
+  return d.origem==='Cantina'&&!!d.cantinaId;
+}
 function resumoFinanceiroCantina(c){
   const dividas=devedoresDaCantina(c.id);
   const pagos=dividas.filter(d=>d.status==='pago').reduce((s,d)=>s+(Number(d.valor)||0),0);
@@ -2869,17 +2877,38 @@ function excluirMassaCantina(){if(!exigirPermissao('cantina_admin','excluir movi
 function htmlCamposDevedoresCantina(devedores=[]){
   const linhas=devedores.length?devedores:[];
   return '<div class="debt-detail" id="cDevedoresBloco" style="display:none;">'+
-    '<div class="debt-detail-head"><div><strong>Quem ficou devendo?</strong><div class="text-muted">A soma precisa ser igual ao valor a receber.</div></div><button type="button" class="btn btn-sm btn-outline" onclick="adicionarLinhaDevedorCantina()">+ Pessoa</button></div>'+
-    '<div id="cDevedoresLinhas">'+linhas.map(d=>linhaDevedorCantinaHTML(d.nome,d.valor)).join('')+'</div>'+
+    '<div class="debt-detail-head"><div><strong>Quem ficou devendo?</strong><div class="text-muted">A soma precisa ser igual ao valor a receber. Dívidas avulsas vinculadas aparecem bloqueadas aqui e devem ser editadas em Devedores.</div></div><button type="button" class="btn btn-sm btn-outline" onclick="adicionarLinhaDevedorCantina()">+ Pessoa</button></div>'+ 
+    '<div id="cDevedoresLinhas">'+linhas.map(d=>linhaDevedorCantinaHTML(d.nome,d.valor,!devedorGeradoPelaCantina(d),d.id)).join('')+'</div>'+ 
     '<div class="debt-total"><span>Total detalhado: <strong id="cTotalDevedores">R$ 0,00</strong></span><span id="cStatusDevedores" class="text-muted">Informe o valor a receber.</span></div></div>';
 }
-function linhaDevedorCantinaHTML(nome='',valor=''){
-  return '<div class="debt-row"><div><label class="form-label">Nome</label><input type="text" class="form-control debt-name" value="'+escapeAttr(nome)+'" placeholder="Nome da pessoa" oninput="atualizarResumoDevedoresCantina()"></div><div><label class="form-label">Valor (R$)</label><input type="number" class="form-control debt-value" min="0.01" step="0.01" value="'+escapeAttr(valor)+'" placeholder="0,00" oninput="atualizarResumoDevedoresCantina()"></div><button type="button" class="btn btn-sm btn-ghost" title="Remover" onclick="this.closest(\'.debt-row\').remove();atualizarResumoDevedoresCantina()">×</button></div>';
+function linhaDevedorCantinaHTML(nome='',valor='',bloqueado=false,id=''){
+  const lock=bloqueado?' disabled':'';
+  const origem=bloqueado?'avulso':'cantina';
+  const aviso=bloqueado?'<div class="text-muted" style="font-size:11px;margin-top:4px;">Avulso · editar em Devedores</div>':'';
+  return '<div class="debt-row" data-origem-registro="'+origem+'" data-devedor-id="'+escapeAttr(id||'')+'"><div><label class="form-label">Nome</label><input type="text" class="form-control debt-name" value="'+escapeAttr(nome)+'" placeholder="Nome da pessoa" oninput="atualizarResumoDevedoresCantina()"'+lock+'>'+aviso+'</div><div><label class="form-label">Valor (R$)</label><input type="number" class="form-control debt-value" min="0.01" step="0.01" value="'+escapeAttr(valor)+'" placeholder="0,00" oninput="atualizarResumoDevedoresCantina()"'+lock+'></div>'+(bloqueado?'<span class="badge badge-cinza">Vinculado</span>':'<button type="button" class="btn btn-sm btn-ghost" title="Remover" onclick="this.closest(\'.debt-row\').remove();atualizarResumoDevedoresCantina()">×</button>')+'</div>';
 }
 function adicionarLinhaDevedorCantina(nome='',valor=''){
   const alvo=document.getElementById('cDevedoresLinhas');if(!alvo)return;
-  alvo.insertAdjacentHTML('beforeend',linhaDevedorCantinaHTML(nome,valor));
+  alvo.insertAdjacentHTML('beforeend',linhaDevedorCantinaHTML(nome,valor,false,''));
   atualizarResumoDevedoresCantina();
+}
+function atualizarResumoDevedoresCantina(){
+  const tipo=document.getElementById('cTipo')?.value||'entrada';
+  const aReceber=Number(document.getElementById('cAReceber')?.value)||0;
+  const bloco=document.getElementById('cDevedoresBloco');
+  if(bloco)bloco.style.display=tipo==='entrada'&&aReceber>0?'block':'none';
+  if(tipo==='entrada'&&aReceber>0&&document.getElementById('cDevedoresLinhas')&&!document.querySelector('#cDevedoresLinhas .debt-row'))adicionarLinhaDevedorCantina();
+  const total=[...document.querySelectorAll('#cDevedoresLinhas .debt-value')].reduce((s,i)=>s+(Number(i.value)||0),0);
+  const totalEl=document.getElementById('cTotalDevedores');if(totalEl)totalEl.textContent=fmt(total);
+  const st=document.getElementById('cStatusDevedores');if(st){const dif=Math.round((aReceber-total)*100)/100;if(aReceber<=0){st.className='text-muted';st.textContent='Sem valor a receber.';}else if(Math.abs(dif)<0.01){st.className='debt-match';st.textContent='✓ Valores conferem';}else{st.className='debt-mismatch';st.textContent=(dif>0?'Faltam ':'Excedeu ')+fmt(Math.abs(dif));}}
+}
+function lerDevedoresCantinaFormulario(){
+  return [...document.querySelectorAll('#cDevedoresLinhas .debt-row')].map(l=>({
+    nome:l.querySelector('.debt-name')?.value.trim()||'',
+    valor:Number(l.querySelector('.debt-value')?.value)||0,
+    origemRegistro:l.dataset.origemRegistro||'cantina',
+    devedorId:l.dataset.devedorId||''
+  })).filter(d=>d.nome||d.valor);
 }
 function alternarCamposCantina(){
   const tipo=document.getElementById('cTipo')?.value;
@@ -2890,19 +2919,6 @@ function alternarCamposCantina(){
   if(lbl)lbl.textContent=entrada?'Valor recebido (R$)':'Valor do custo (R$)';
   if(!entrada){const ar=document.getElementById('cAReceber');if(ar)ar.value='0';}
   atualizarResumoDevedoresCantina();
-}
-function atualizarResumoDevedoresCantina(){
-  const tipo=document.getElementById('cTipo')?.value;
-  const aReceber=Number(document.getElementById('cAReceber')?.value)||0;
-  const bloco=document.getElementById('cDevedoresBloco');
-  if(bloco)bloco.style.display=tipo==='entrada'&&aReceber>0?'block':'none';
-  if(tipo==='entrada'&&aReceber>0&&document.getElementById('cDevedoresLinhas')&&!document.querySelector('#cDevedoresLinhas .debt-row'))adicionarLinhaDevedorCantina();
-  const total=[...document.querySelectorAll('#cDevedoresLinhas .debt-value')].reduce((s,i)=>s+(Number(i.value)||0),0);
-  const totalEl=document.getElementById('cTotalDevedores');if(totalEl)totalEl.textContent=fmt(total);
-  const st=document.getElementById('cStatusDevedores');if(st){const dif=Math.round((aReceber-total)*100)/100;if(aReceber<=0){st.className='text-muted';st.textContent='Sem valor a receber.';}else if(Math.abs(dif)<0.01){st.className='debt-match';st.textContent='✓ Valores conferem';}else{st.className='debt-mismatch';st.textContent=(dif>0?'Faltam ':'Excedeu ')+fmt(Math.abs(dif));}}
-}
-function lerDevedoresCantinaFormulario(){
-  return [...document.querySelectorAll('#cDevedoresLinhas .debt-row')].map(l=>({nome:l.querySelector('.debt-name')?.value.trim()||'',valor:Number(l.querySelector('.debt-value')?.value)||0})).filter(d=>d.nome||d.valor);
 }
 function abrirModalCantina(c=null){
   const agora=new Date();
@@ -2934,6 +2950,7 @@ function salvarCantina(editId){if(!exigirPermissao('cantina_operar','salvar movi
   const forma=document.getElementById('cForma').value;
   const aReceber=tipo==='entrada'?(temPagos?Number(existente.valorAReceberInicial)||0:Number(document.getElementById('cAReceber')?.value)||0):0;
   const detalhes=tipo==='entrada'&&!temPagos?lerDevedoresCantinaFormulario():[];
+  const detalhesAutomaticos=detalhes.filter(d=>d.origemRegistro!=='avulso');
   if(!data||!desc||!forma||valor<0||aReceber<0||(tipo==='custo'&&valor<=0)||(tipo==='entrada'&&valor<=0&&aReceber<=0)){alert('Preencha os campos corretamente. O total da cantina precisa ser maior que zero.');return;}
   if(tipo==='entrada'&&!temPagos&&aReceber>0){
     if(!detalhes.length||detalhes.some(d=>!d.nome||d.valor<=0)){alert('Detalhe todas as pessoas que ficaram devendo e informe valores maiores que zero.');return;}
@@ -2954,16 +2971,16 @@ function salvarCantina(editId){if(!exigirPermissao('cantina_operar','salvar movi
     const idx=db.cantina.findIndex(c=>c.id===editId);
     db.cantina[idx]={...item,tipo,data,descricao:desc,valor:valorFinanceiro,valorRecebidoInicial:tipo==='entrada'?valorFinanceiro:0,valorAReceberInicial:tipo==='entrada'?aReceber:0,totalVenda:tipo==='entrada'?valorFinanceiro+aReceber:valorFinanceiro,formaPagamento:forma,lancamentoId};
     if(!temPagos){
-      db.devedores=db.devedores.filter(d=>String(d.cantinaId||'')!==String(editId));
-      detalhes.forEach(d=>db.devedores.push({id:uid(),nome:d.nome,origem:'Cantina',descricaoOrigem:desc,cantinaId:editId,valor:d.valor,status:'pendente',dataDivida:data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null,criadoEm:Date.now()}));
+      db.devedores=db.devedores.filter(d=>String(d.cantinaId||'')!==String(editId)||!devedorGeradoPelaCantina(d));
+      detalhesAutomaticos.forEach(d=>db.devedores.push({id:uid(),nome:d.nome,origem:'Cantina',origemRegistro:'cantina_automatica',descricaoOrigem:desc,cantinaId:editId,valor:d.valor,status:'pendente',dataDivida:data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null}));
     }
   }else{
     const cantinaId=uid();
     db.cantina.push({id:cantinaId,tipo,data,descricao:desc,valor:valorFinanceiro,valorRecebidoInicial:tipo==='entrada'?valorFinanceiro:0,valorAReceberInicial:tipo==='entrada'?aReceber:0,totalVenda:tipo==='entrada'?valorFinanceiro+aReceber:valorFinanceiro,formaPagamento:forma,lancamentoId});
-    detalhes.forEach(d=>db.devedores.push({id:uid(),nome:d.nome,origem:'Cantina',descricaoOrigem:desc,cantinaId,valor:d.valor,status:'pendente',dataDivida:data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null,criadoEm:Date.now()}));
+    detalhesAutomaticos.forEach(d=>db.devedores.push({id:uid(),nome:d.nome,origem:'Cantina',origemRegistro:'cantina_automatica',descricaoOrigem:desc,cantinaId,valor:d.valor,status:'pendente',dataDivida:data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null}));
   }
   salvarDB();closeModal();renderCantina();
-  notificar('success','Cantina salva',aReceber>0?'Movimento salvo e '+detalhes.length+' dívida(s) vinculada(s).':'Movimento salvo com sucesso.');
+  notificar('success','Cantina salva',aReceber>0?'Movimento salvo e '+detalhesAutomaticos.length+' dívida(s) da Cantina vinculada(s).':'Movimento salvo com sucesso.');
 }
 function editarCantina(id){if(!exigirPermissao('cantina_operar','editar movimentos da cantina'))return;const c=db.cantina.find(x=>x.id===id);if(c)abrirModalCantina(c);}
 function abrirDevedoresCantina(cantinaId){
@@ -2986,8 +3003,18 @@ function delCantina(id){if(!exigirPermissao('cantina_admin','excluir movimentos 
 
 // DEVEDORES / CONTAS A RECEBER
 function pgDevedores(){
-  document.getElementById('topbarActions').innerHTML=somentePermissao('cantina_operar','<button class="btn btn-primary" onclick="novoDevedorAvulso()">+ Devedor avulso</button>');
+  document.getElementById('topbarActions').innerHTML='<div style="display:flex;gap:10px;margin-left:16px;padding-left:16px;border-left:1px solid var(--borda);flex-wrap:wrap;">'+somentePermissao('auditoria_visualizar','<button class="btn btn-ghost" onclick="abrirHistoricoModulo(\'devedor\',\'Histórico de devedores\')">&#128337; Histórico geral</button>')+somentePermissao('cantina_operar','<button class="btn btn-primary" onclick="novoDevedorAvulso()">+ Devedor avulso</button>')+'</div>';
   renderDevedores();
+}
+function resumoAutoriaDevedor(d){
+  if(!temPermissao('auditoria_visualizar'))return'';
+  const eventos=eventosAuditoria('devedor',d.id);
+  const criado=[...eventos].reverse().find(e=>e.acao==='Criado');
+  const ultimo=eventos[0];
+  if(!criado&&!ultimo)return'<div class="text-muted" style="margin-top:4px;font-size:11px;">Autoria anterior ao histórico.</div>';
+  const autorCriacao=criado?.usuarioEmail||criado?.usuarioNome||'Usuário não identificado';
+  const ultimaEdicao=ultimo&&ultimo.acao!=='Criado'?'<br>Última ação: '+escapeHTML(ultimo.acao)+' por '+escapeHTML(ultimo.usuarioEmail||ultimo.usuarioNome||'Usuário não identificado'):' ';
+  return '<div class="text-muted" style="margin-top:4px;font-size:11px;">Registrado por '+escapeHTML(autorCriacao)+ultimaEdicao+'</div>';
 }
 function renderDevedores(){
   const mes=filtroMes,ano=filtroAno;
@@ -2999,30 +3026,89 @@ function renderDevedores(){
   const totalRecebido=recebidosMes.reduce((s,d)=>s+(Number(d.valor)||0),0);
   const linhas=periodo.length?periodo.map(d=>{
     const c=d.cantinaId?db.cantina.find(x=>String(x.id)===String(d.cantinaId)):null;
+    const automatico=devedorGeradoPelaCantina(d);
     const origem=d.origem==='Cantina'&&c?'Cantina · '+(c.descricao||fmtData(c.data)):d.descricaoOrigem||d.origem||'Outro';
-    const acao=d.status==='pago'?'<span class="badge badge-verde">✓ Pago</span>':somentePermissao('cantina_operar','<button class="btn btn-sm btn-primary" onclick="abrirPagamentoDevedor(\''+d.id+'\')">✓ Registrar pagamento</button>');
-    return '<tr><td><strong>'+escapeHTML(d.nome||'Sem nome')+'</strong></td><td>'+escapeHTML(origem)+'</td><td>'+fmtData(d.dataDivida)+'</td><td>'+fmt(d.valor)+'</td><td><span class="badge '+(d.status==='pago'?'badge-verde':'badge-amarelo')+'">'+(d.status==='pago'?'Pago':'Pendente')+'</span>'+(d.status==='pago'?'<div class="text-muted" style="margin-top:4px;">'+fmtData(d.dataPagamento)+' · '+escapeHTML(d.formaPagamento||'-')+'</div>':'')+'</td><td style="text-align:right;">'+acao+'</td></tr>';
+    const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'devedor\',\''+escapeAttr(d.id)+'\',\''+escapeAttr('Devedor: '+(d.nome||'Sem nome'))+'\')">&#128337;</button>');
+    const editar=somentePermissao('cantina_operar','<button class="btn btn-sm btn-outline" title="Editar" onclick="editarDevedor(\''+escapeAttr(d.id)+'\')">&#9999;&#65039;</button>');
+    const excluir=!automatico?somentePermissao('cantina_operar','<button class="btn btn-sm btn-ghost" title="Excluir" onclick="excluirDevedor(\''+escapeAttr(d.id)+'\')">&#128465;</button>'):'';
+    const pagamento=d.status==='pago'?somentePermissao('cantina_operar','<button class="btn btn-sm btn-ghost" title="Desfazer pagamento" onclick="desfazerPagamentoDevedor(\''+escapeAttr(d.id)+'\')">↶ Desfazer</button>'):somentePermissao('cantina_operar','<button class="btn btn-sm btn-primary" onclick="abrirPagamentoDevedor(\''+escapeAttr(d.id)+'\')">✓ Registrar pagamento</button>');
+    const origemBadge=automatico?'<div class="text-muted" style="margin-top:3px;font-size:11px;">Gerado pela Cantina</div>':'<div class="text-muted" style="margin-top:3px;font-size:11px;">Cadastro avulso</div>';
+    return '<tr><td><strong>'+escapeHTML(d.nome||'Sem nome')+'</strong>'+resumoAutoriaDevedor(d)+'</td><td>'+escapeHTML(origem)+origemBadge+'</td><td>'+fmtData(d.dataDivida)+'</td><td>'+fmt(d.valor)+'</td><td><span class="badge '+(d.status==='pago'?'badge-verde':'badge-amarelo')+'">'+(d.status==='pago'?'Pago':'Pendente')+'</span>'+(d.status==='pago'?'<div class="text-muted" style="margin-top:4px;">'+fmtData(d.dataPagamento)+' · '+escapeHTML(d.formaPagamento||'-')+'</div>':'')+'</td><td style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'+historico+editar+excluir+pagamento+'</div></td></tr>';
   }).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128179;</div><p>Nenhum devedor registrado em '+mesNome(mes)+'/'+ano+'.</p></div></td></tr>';
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-4 mb-6"><div class="metric"><div class="metric-label">A receber</div><div class="metric-value '+(totalPendente>0?'negativo':'neutro')+'">'+fmt(totalPendente)+'</div><div class="metric-sub">Dívidas originadas no período</div></div><div class="metric"><div class="metric-label">Recebido no mês</div><div class="metric-value positivo">'+fmt(totalRecebido)+'</div><div class="metric-sub">Pagamentos efetivamente registrados</div></div><div class="metric"><div class="metric-label">Pendentes</div><div class="metric-value neutro">'+pendentes.length+'</div><div class="metric-sub">Pessoa(s) aguardando pagamento</div></div><div class="metric"><div class="metric-label">Quitados no mês</div><div class="metric-value positivo">'+recebidosMes.length+'</div><div class="metric-sub">Pagamento realizado em '+mesNome(mes)+'/'+ano+'</div></div></div><div class="card"><div class="section-header"><div><div class="section-title">Devedores — '+mesNome(mes)+'/'+ano+'</div><div class="text-muted" style="margin-top:4px;">Valores pendentes não alteram o caixa. Somente o pagamento gera uma entrada financeira.</div></div></div><div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Origem</th><th>Data</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>'+linhas+'</tbody></table></div></div></div>';
+  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-4 mb-6"><div class="metric"><div class="metric-label">A receber</div><div class="metric-value '+(totalPendente>0?'negativo':'neutro')+'">'+fmt(totalPendente)+'</div><div class="metric-sub">Dívidas originadas no período</div></div><div class="metric"><div class="metric-label">Recebido no mês</div><div class="metric-value positivo">'+fmt(totalRecebido)+'</div><div class="metric-sub">Pagamentos efetivamente registrados</div></div><div class="metric"><div class="metric-label">Pendentes</div><div class="metric-value neutro">'+pendentes.length+'</div><div class="metric-sub">Pessoa(s) aguardando pagamento</div></div><div class="metric"><div class="metric-label">Quitados no mês</div><div class="metric-value positivo">'+recebidosMes.length+'</div><div class="metric-sub">Pagamento realizado em '+mesNome(mes)+'/'+ano+'</div></div></div><div class="card"><div class="section-header"><div><div class="section-title">Devedores — '+mesNome(mes)+'/'+ano+'</div><div class="text-muted" style="margin-top:4px;">Valores pendentes não alteram o caixa. Somente o pagamento gera uma entrada financeira.</div></div></div><div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Origem</th><th>Data</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+linhas+'</tbody></table></div></div></div>';
+}
+function formularioDevedorHTML(d=null){
+  const cantinas=[...db.cantina].filter(c=>c.tipo==='entrada').sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  const origem=d?.origem||'Outro';
+  const cantinaId=d?.cantinaId||'';
+  return '<div class="form-group"><label class="form-label">Nome da pessoa</label><input class="form-control" id="dNome" value="'+escapeAttr(d?.nome||'')+'" placeholder="Nome"></div><div class="form-row"><div class="form-group"><label class="form-label">Origem</label><select class="form-control" id="dOrigem" onchange="alternarOrigemDevedor()"><option value="Outro" '+(origem==='Outro'?'selected':'')+'>Outro</option><option value="Cantina" '+(origem==='Cantina'?'selected':'')+'>Cantina</option><option value="Evento" '+(origem==='Evento'?'selected':'')+'>Evento</option><option value="Material" '+(origem==='Material'?'selected':'')+'>Material</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="dData" value="'+escapeAttr(d?.dataDivida||hoje())+'"></div></div><div id="dCantinaWrap" class="form-group" style="'+(origem==='Cantina'?'':'display:none;')+'"><label class="form-label">Cantina vinculada</label><select class="form-control" id="dCantina"><option value="">Selecione...</option>'+cantinas.map(c=>'<option value="'+escapeAttr(c.id)+'" '+(String(c.id)===String(cantinaId)?'selected':'')+'>'+escapeHTML(fmtData(c.data)+' — '+c.descricao)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Descrição / motivo</label><input class="form-control" id="dDescricao" value="'+escapeAttr(d?.descricaoOrigem||'')+'" placeholder="Ex: compra de material..."></div><div class="form-group"><label class="form-label">Valor devido (R$)</label><input type="number" class="form-control" id="dValor" min="0.01" step="0.01" value="'+escapeAttr(d?String(d.valor||''):'')+'" placeholder="0,00"></div>';
 }
 function novoDevedorAvulso(){if(!exigirPermissao('cantina_operar','cadastrar devedores'))return;
-  const cantinas=[...db.cantina].filter(c=>c.tipo==='entrada').sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-  openModal('Novo devedor avulso','<div class="form-group"><label class="form-label">Nome da pessoa</label><input class="form-control" id="dNome" placeholder="Nome"></div><div class="form-row"><div class="form-group"><label class="form-label">Origem</label><select class="form-control" id="dOrigem" onchange="alternarOrigemDevedor()"><option value="Outro">Outro</option><option value="Cantina">Cantina</option><option value="Evento">Evento</option><option value="Material">Material</option></select></div><div class="form-group"><label class="form-label">Data</label><input type="date" class="form-control" id="dData" value="'+hoje()+'"></div></div><div id="dCantinaWrap" class="form-group" style="display:none;"><label class="form-label">Cantina vinculada</label><select class="form-control" id="dCantina"><option value="">Selecione...</option>'+cantinas.map(c=>'<option value="'+escapeAttr(c.id)+'">'+escapeHTML(fmtData(c.data)+' — '+c.descricao)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Descrição / motivo</label><input class="form-control" id="dDescricao" placeholder="Ex: compra de material..."></div><div class="form-group"><label class="form-label">Valor devido (R$)</label><input type="number" class="form-control" id="dValor" min="0.01" step="0.01" placeholder="0,00"></div>','<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarDevedorAvulso()">Salvar</button>');
+  openModal('Novo devedor avulso',formularioDevedorHTML(null),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarDevedorAvulso()">Salvar</button>');
 }
 function alternarOrigemDevedor(){const origem=document.getElementById('dOrigem')?.value;const w=document.getElementById('dCantinaWrap');if(w)w.style.display=origem==='Cantina'?'block':'none';}
-function salvarDevedorAvulso(){if(!exigirPermissao('cantina_operar','cadastrar devedores'))return;
+function dadosFormularioDevedor(){
   const nome=document.getElementById('dNome').value.trim(),origem=document.getElementById('dOrigem').value,data=document.getElementById('dData').value,descricao=document.getElementById('dDescricao').value.trim(),valor=Number(document.getElementById('dValor').value)||0,cantinaId=origem==='Cantina'?document.getElementById('dCantina').value:'';
-  if(!nome||!data||valor<=0||!origem){alert('Preencha nome, data, origem e valor corretamente.');return;}
-  if(origem==='Cantina'&&!cantinaId){alert('Selecione obrigatoriamente qual cantina originou esta dívida.');return;}
-  const c=cantinaId?db.cantina.find(x=>String(x.id)===String(cantinaId)):null;
-  db.devedores.push({id:uid(),nome,origem,descricaoOrigem:descricao||(c?.descricao||origem),cantinaId:cantinaId||null,valor,status:'pendente',dataDivida:data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null,criadoEm:Date.now()});
-  if(c){
-    const recebidoInicial=Number(c.valorRecebidoInicial??c.valor)||0;
-    c.valorRecebidoInicial=recebidoInicial;
-    c.valorAReceberInicial=(Number(c.valorAReceberInicial)||0)+valor;
-    c.totalVenda=recebidoInicial+c.valorAReceberInicial;
-  }
+  if(!nome||!data||valor<=0||!origem){alert('Preencha nome, data, origem e valor corretamente.');return null;}
+  if(origem==='Cantina'&&!cantinaId){alert('Selecione obrigatoriamente qual cantina originou esta dívida.');return null;}
+  return{nome,origem,data,descricao,valor,cantinaId:cantinaId||null};
+}
+function ajustarCantinaPorDividaAvulsa(cantinaId,diferenca){
+  if(!cantinaId||!diferenca)return;
+  const c=db.cantina.find(x=>String(x.id)===String(cantinaId));if(!c)return;
+  const recebidoInicial=Number(c.valorRecebidoInicial??c.valor)||0;
+  c.valorRecebidoInicial=recebidoInicial;
+  c.valorAReceberInicial=Math.max(0,(Number(c.valorAReceberInicial)||0)+diferenca);
+  c.totalVenda=recebidoInicial+c.valorAReceberInicial;
+}
+function salvarDevedorAvulso(){if(!exigirPermissao('cantina_operar','cadastrar devedores'))return;
+  const dados=dadosFormularioDevedor();if(!dados)return;
+  const c=dados.cantinaId?db.cantina.find(x=>String(x.id)===String(dados.cantinaId)):null;
+  const id=uid();
+  db.devedores.push({id,nome:dados.nome,origem:dados.origem,origemRegistro:'avulso',descricaoOrigem:dados.descricao||(c?.descricao||dados.origem),cantinaId:dados.cantinaId,valor:dados.valor,status:'pendente',dataDivida:dados.data,dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null});
+  if(c)ajustarCantinaPorDividaAvulsa(c.id,dados.valor);
   salvarDB();closeModal();renderDevedores();notificar('success','Devedor cadastrado','A dívida foi registrada sem alterar o saldo financeiro.'+(c?' A cantina vinculada também foi atualizada.':''));
+}
+function editarDevedor(id){if(!exigirPermissao('cantina_operar','editar devedores'))return;
+  const d=db.devedores.find(x=>String(x.id)===String(id));if(!d)return;
+  if(devedorGeradoPelaCantina(d)){
+    const c=d.cantinaId?db.cantina.find(x=>String(x.id)===String(d.cantinaId)):null;
+    openModal('Edição vinculada à Cantina','<div class="alert alert-amarelo" style="margin:0;">Este devedor foi criado automaticamente pela Cantina <strong>'+escapeHTML(c?.descricao||fmtData(c?.data)||'vinculada')+'</strong>. Para preservar os totais, nome e valor devem ser alterados na própria Cantina.</div>','<button class="btn btn-ghost" onclick="closeModal()">Fechar</button>'+(c?'<button class="btn btn-primary" onclick="abrirCantinaDoDevedor(\''+escapeAttr(d.id)+'\')">Abrir Cantina</button>':''));
+    return;
+  }
+  if(d.status==='pago'){
+    openModal('Pagamento já registrado','<div class="alert alert-amarelo" style="margin:0;">Esta dívida já foi paga. Desfaça o pagamento antes de editar valor, origem ou vínculo para que o lançamento financeiro continue correto.</div>','<button class="btn btn-primary" onclick="closeModal()">Entendi</button>');
+    return;
+  }
+  openModal('Editar devedor avulso',formularioDevedorHTML(d),'<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="salvarEdicaoDevedor(\''+escapeAttr(d.id)+'\')">Salvar alterações</button>');
+}
+function abrirCantinaDoDevedor(id){
+  const d=db.devedores.find(x=>String(x.id)===String(id));if(!d?.cantinaId)return;
+  const cantinaId=d.cantinaId;closeModal();navigate('cantina');setTimeout(()=>editarCantina(cantinaId),0);
+}
+function salvarEdicaoDevedor(id){if(!exigirPermissao('cantina_operar','editar devedores'))return;
+  const d=db.devedores.find(x=>String(x.id)===String(id));if(!d||devedorGeradoPelaCantina(d)||d.status==='pago')return;
+  const dados=dadosFormularioDevedor();if(!dados)return;
+  if(d.cantinaId)ajustarCantinaPorDividaAvulsa(d.cantinaId,-(Number(d.valor)||0));
+  if(dados.cantinaId)ajustarCantinaPorDividaAvulsa(dados.cantinaId,dados.valor);
+  const c=dados.cantinaId?db.cantina.find(x=>String(x.id)===String(dados.cantinaId)):null;
+  Object.assign(d,{nome:dados.nome,origem:dados.origem,origemRegistro:'avulso',descricaoOrigem:dados.descricao||(c?.descricao||dados.origem),cantinaId:dados.cantinaId,valor:dados.valor,dataDivida:dados.data});
+  salvarDB();closeModal();renderDevedores();notificar('success','Devedor atualizado','As alterações foram salvas e registradas no histórico.');
+}
+function excluirDevedor(id){if(!exigirPermissao('cantina_operar','excluir devedores'))return;
+  const d=db.devedores.find(x=>String(x.id)===String(id));if(!d)return;
+  if(devedorGeradoPelaCantina(d)){
+    editarDevedor(id);return;
+  }
+  if(d.status==='pago'){
+    openModal('Não é possível excluir','<div class="alert alert-amarelo" style="margin:0;">Esta dívida possui um pagamento registrado. Use <strong>Desfazer pagamento</strong> primeiro; depois a exclusão ficará disponível.</div>','<button class="btn btn-primary" onclick="closeModal()">Entendi</button>');
+    return;
+  }
+  confirmar('Excluir a dívida de '+(d.nome||'este devedor')+' no valor de '+fmt(d.valor)+'? Esta ação ficará registrada no histórico.',()=>{
+    if(d.cantinaId)ajustarCantinaPorDividaAvulsa(d.cantinaId,-(Number(d.valor)||0));
+    db.devedores=db.devedores.filter(x=>String(x.id)!==String(id));
+    salvarDB();renderDevedores();notificar('success','Devedor excluído','O cadastro avulso foi removido e a ação foi registrada no histórico.');
+  });
 }
 function abrirPagamentoDevedor(id){if(!exigirPermissao('cantina_operar','registrar pagamentos de devedores'))return;
   const d=db.devedores.find(x=>String(x.id)===String(id));if(!d||d.status==='pago')return;
@@ -3039,6 +3125,20 @@ function confirmarPagamentoDevedor(id){if(!exigirPermissao('cantina_operar','reg
   salvarDB();closeModal();
   if(paginaAtual==='cantina')renderCantina();else renderDevedores();
   notificar('success','Pagamento registrado',(d.nome||'Devedor')+' quitou '+fmt(d.valor)+'. O valor agora entrou no fluxo de caixa.');
+}
+function desfazerPagamentoDevedor(id){if(!exigirPermissao('cantina_operar','desfazer pagamentos de devedores'))return;
+  const d=db.devedores.find(x=>String(x.id)===String(id));if(!d||d.status!=='pago'){alert('Esta dívida não possui pagamento para desfazer.');return;}
+  const lanc=db.lancamentos.find(l=>String(l.id)===String(d.lancamentoPagamentoId||''))||db.lancamentos.find(l=>String(l.devedorId||'')===String(d.id)&&l.tipo==='receita');
+  if(!lanc){
+    openModal('Não foi possível desfazer com segurança','<div class="alert alert-vermelho" style="margin:0;">O lançamento financeiro vinculado a este pagamento não foi encontrado. Para evitar deixar o caixa incorreto, o sistema não alterou a dívida.</div>','<button class="btn btn-primary" onclick="closeModal()">Fechar</button>');
+    return;
+  }
+  confirmar('Desfazer o pagamento de '+(d.nome||'este devedor')+' no valor de '+fmt(d.valor)+'? O lançamento de receita correspondente será removido e a dívida voltará a ficar pendente.',()=>{
+    db.lancamentos=db.lancamentos.filter(l=>String(l.id)!==String(lanc.id));
+    Object.assign(d,{status:'pendente',dataPagamento:null,formaPagamento:null,lancamentoPagamentoId:null,pagoEm:null});
+    salvarDB();renderDevedores();
+    notificar('success','Pagamento desfeito','A dívida voltou para Pendente e a receita correspondente foi retirada do fluxo de caixa.');
+  });
 }
 
 // RIFAS
@@ -4099,7 +4199,7 @@ Object.assign(window,{
   abrirNovoLanc,salvarLanc,excluirLanc,editarLanc,setFiltroTipoLanc,atualizarBulkLanc,toggleTodosLanc,limparSelLanc,editarMassaLanc,confirmarEditMassaLanc,excluirMassaLanc,
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,abrirDevedoresCantina,adicionarLinhaDevedorCantina,atualizarResumoDevedoresCantina,alternarCamposCantina,
-  novoDevedorAvulso,alternarOrigemDevedor,salvarDevedorAvulso,abrirPagamentoDevedor,confirmarPagamentoDevedor,
+  novoDevedorAvulso,alternarOrigemDevedor,salvarDevedorAvulso,editarDevedor,salvarEdicaoDevedor,excluirDevedor,abrirCantinaDoDevedor,abrirPagamentoDevedor,confirmarPagamentoDevedor,desfazerPagamentoDevedor,
   novaRifa,salvarRifa,editarRifa,delRifa,
   confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,notificar,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
   abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,atualizarMapeamentoCSV,reprocessarCabecalhoCSV,
