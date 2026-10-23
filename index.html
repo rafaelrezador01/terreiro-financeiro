@@ -857,6 +857,34 @@ textarea.form-control{
   table{font-size:11px;}
   th,td{padding:7px 8px;}
 }
+
+/* Devedores agrupados por cantina + pendências anteriores */
+.debt-past-alert{margin-bottom:18px;}
+.debt-past-list{display:grid;gap:8px;margin-top:10px;}
+.debt-past-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:rgba(255,255,255,.62);border:1px solid rgba(122,92,0,.16);border-radius:var(--radius-sm);}
+.debt-past-item-main{min-width:0;}
+.debt-past-item-title{font-weight:600;font-size:13px;}
+.debt-past-item-meta{font-size:11px;margin-top:2px;opacity:.82;}
+.debt-group-list{display:grid;gap:12px;}
+.debt-group{border:1px solid var(--borda);border-radius:var(--radius);background:var(--branco);overflow:hidden;}
+.debt-group-head{width:100%;border:0;background:transparent;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;cursor:pointer;color:inherit;}
+.debt-group-head:hover{background:var(--creme);}
+.debt-group-title{font-weight:700;font-size:14px;}
+.debt-group-meta{font-size:12px;color:var(--texto3);margin-top:4px;line-height:1.4;}
+.debt-group-toggle{display:flex;align-items:center;gap:8px;flex:0 0 auto;color:var(--verde);font-size:12px;font-weight:600;}
+.debt-group-arrow{font-size:16px;transition:transform .2s;}
+.debt-group.open .debt-group-arrow{transform:rotate(180deg);}
+.debt-group-body{display:none;border-top:1px solid var(--borda);padding:12px 16px 16px;background:var(--creme);}
+.debt-group.open .debt-group-body{display:block;}
+.debt-person-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;background:var(--branco);border:1px solid var(--borda);border-radius:var(--radius-sm);margin-top:8px;}
+.debt-person-row:first-child{margin-top:0;}
+.debt-person-main{min-width:0;}
+.debt-person-name{font-weight:600;font-size:13px;}
+.debt-person-meta{font-size:11px;color:var(--texto3);margin-top:3px;line-height:1.45;}
+.debt-person-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.debt-section-label{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;margin:22px 0 10px;}
+@media(max-width:600px){.debt-past-item,.debt-person-row,.debt-group-head{align-items:stretch;flex-direction:column}.debt-group-toggle,.debt-person-actions{justify-content:flex-start}.debt-person-actions .btn{flex:1 1 140px}}
+
 </style>
 </head>
 <body>
@@ -3016,26 +3044,75 @@ function resumoAutoriaDevedor(d){
   const ultimaEdicao=ultimo&&ultimo.acao!=='Criado'?'<br>Última ação: '+escapeHTML(ultimo.acao)+' por '+escapeHTML(ultimo.usuarioEmail||ultimo.usuarioNome||'Usuário não identificado'):' ';
   return '<div class="text-muted" style="margin-top:4px;font-size:11px;">Registrado por '+escapeHTML(autorCriacao)+ultimaEdicao+'</div>';
 }
+function periodoNumeroDevedor(data){
+  if(!dataISOValida(data))return null;
+  const [a,m]=data.split('-').map(Number);return a*12+m;
+}
+function irParaPeriodoDevedor(mes,ano){
+  filtroMes=Number(mes);filtroAno=Number(ano);garantirAnoFiltroGlobal(filtroAno);atualizarSeletorGlobal();renderDevedores();
+}
+function toggleGrupoCantinaDevedor(id){
+  const el=document.getElementById('debt-group-'+id);if(!el)return;
+  const aberto=el.classList.toggle('open');
+  const btn=el.querySelector('.debt-group-head');if(btn)btn.setAttribute('aria-expanded',aberto?'true':'false');
+}
+function htmlAcaoPagamentoDevedor(d){
+  if(!temPermissao('cantina_operar'))return'';
+  return d.status==='pago'
+    ?'<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();desfazerPagamentoDevedor(\''+escapeAttr(d.id)+'\')">↶ Desfazer</button>'
+    :'<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();abrirPagamentoDevedor(\''+escapeAttr(d.id)+'\')">✓ Receber</button>';
+}
 function renderDevedores(){
   const mes=filtroMes,ano=filtroAno;
+  const periodoAtual=ano*12+mes;
   const todos=[...(db.devedores||[])].sort((a,b)=>String(b.dataDivida||'').localeCompare(String(a.dataDivida||'')));
-  const periodo=todos.filter(d=>{if(!dataISOValida(d.dataDivida))return false;const x=new Date(d.dataDivida+'T12:00:00');return x.getMonth()+1===mes&&x.getFullYear()===ano;});
+  const periodo=todos.filter(d=>periodoNumeroDevedor(d.dataDivida)===periodoAtual);
   const pendentes=periodo.filter(d=>d.status!=='pago');
-  const recebidosMes=todos.filter(d=>d.status==='pago'&&dataISOValida(d.dataPagamento)&&(()=>{const x=new Date(d.dataPagamento+'T12:00:00');return x.getMonth()+1===mes&&x.getFullYear()===ano;})());
+  const recebidosMes=todos.filter(d=>d.status==='pago'&&dataISOValida(d.dataPagamento)&&periodoNumeroDevedor(d.dataPagamento)===periodoAtual);
   const totalPendente=pendentes.reduce((s,d)=>s+(Number(d.valor)||0),0);
   const totalRecebido=recebidosMes.reduce((s,d)=>s+(Number(d.valor)||0),0);
-  const linhas=periodo.length?periodo.map(d=>{
+
+  // Pendências antigas permanecem no mês de origem e geram apenas um aviso nos meses posteriores.
+  const anterioresPendentes=todos.filter(d=>d.status!=='pago'&&periodoNumeroDevedor(d.dataDivida)!==null&&periodoNumeroDevedor(d.dataDivida)<periodoAtual);
+  const porMesAnterior=new Map();
+  anterioresPendentes.forEach(d=>{
+    const [a,m]=d.dataDivida.split('-').map(Number);const chave=a+'-'+m;
+    const atual=porMesAnterior.get(chave)||{ano:a,mes:m,qtd:0,total:0};atual.qtd++;atual.total+=Number(d.valor)||0;porMesAnterior.set(chave,atual);
+  });
+  const alertasAnteriores=[...porMesAnterior.values()].sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes));
+  const avisoAnteriores=alertasAnteriores.length?'<div class="alert alert-amarelo debt-past-alert"><div style="width:100%;"><strong>⚠ Existem pendências de meses anteriores.</strong><div class="text-sm" style="margin-top:4px;">Volte ao mês de origem para registrar o pagamento. A data real do recebimento ficará registrada no próprio devedor.</div><div class="debt-past-list">'+alertasAnteriores.map(x=>'<div class="debt-past-item"><div class="debt-past-item-main"><div class="debt-past-item-title">'+mesNome(x.mes)+'/'+x.ano+'</div><div class="debt-past-item-meta">'+x.qtd+' pessoa(s) pendente(s) · '+fmt(x.total)+' a receber</div></div><button class="btn btn-sm btn-outline" onclick="irParaPeriodoDevedor('+x.mes+','+x.ano+')">Ir para o mês</button></div>').join('')+'</div></div></div>':'';
+
+  const gruposCantina=new Map();
+  const avulsos=[];
+  periodo.forEach(d=>{
+    if(devedorGeradoPelaCantina(d)&&d.cantinaId){
+      const chave=String(d.cantinaId);if(!gruposCantina.has(chave))gruposCantina.set(chave,[]);gruposCantina.get(chave).push(d);
+    }else avulsos.push(d);
+  });
+
+  const gruposHTML=[...gruposCantina.entries()].map(([cantinaId,itens])=>{
+    const c=db.cantina.find(x=>String(x.id)===cantinaId)||{};
+    const data=c.data||itens[0]?.dataDivida||'';
+    const pend=itens.filter(d=>d.status!=='pago');
+    const totalPend=pend.reduce((s,d)=>s+(Number(d.valor)||0),0);
+    const pagos=itens.length-pend.length;
+    const detalhes=itens.map(d=>'<div class="debt-person-row"><div class="debt-person-main"><div class="debt-person-name">'+(d.status==='pago'?'✓ ':'○ ')+escapeHTML(d.nome||'Sem nome')+' — '+fmt(d.valor)+'</div><div class="debt-person-meta">'+(d.status==='pago'?'Pago em '+fmtData(d.dataPagamento)+' via '+escapeHTML(d.formaPagamento||'-'):'Pagamento pendente')+resumoAutoriaDevedor(d)+'</div></div><div class="debt-person-actions">'+htmlAcaoPagamentoDevedor(d)+'</div></div>').join('');
+    const titulo='Cantina '+fmtData(data);
+    return '<div class="debt-group" id="debt-group-'+escapeAttr(cantinaId)+'"><button type="button" class="debt-group-head" aria-expanded="false" onclick="toggleGrupoCantinaDevedor(\''+escapeAttr(cantinaId)+'\')"><div><div class="debt-group-title">🍽️ '+escapeHTML(titulo)+'</div><div class="debt-group-meta">'+itens.length+' devedor(es) · '+pend.length+' pendente(s) · '+fmt(totalPend)+' a receber'+(pagos?' · '+pagos+' pago(s)':'')+'</div></div><div class="debt-group-toggle"><span>Clique para ver devedores</span><span class="debt-group-arrow">⌄</span></div></button><div class="debt-group-body">'+detalhes+'</div></div>';
+  }).join('');
+
+  const linhasAvulsos=avulsos.length?avulsos.map(d=>{
     const c=d.cantinaId?db.cantina.find(x=>String(x.id)===String(d.cantinaId)):null;
-    const automatico=devedorGeradoPelaCantina(d);
     const origem=d.origem==='Cantina'&&c?'Cantina · '+(c.descricao||fmtData(c.data)):d.descricaoOrigem||d.origem||'Outro';
     const historico=somentePermissao('auditoria_visualizar','<button class="btn btn-sm btn-ghost" title="Histórico" onclick="abrirHistoricoRegistro(\'devedor\',\''+escapeAttr(d.id)+'\',\''+escapeAttr('Devedor: '+(d.nome||'Sem nome'))+'\')">&#128337;</button>');
     const editar=somentePermissao('cantina_operar','<button class="btn btn-sm btn-outline" title="Editar" onclick="editarDevedor(\''+escapeAttr(d.id)+'\')">&#9999;&#65039;</button>');
-    const excluir=!automatico?somentePermissao('cantina_operar','<button class="btn btn-sm btn-ghost" title="Excluir" onclick="excluirDevedor(\''+escapeAttr(d.id)+'\')">&#128465;</button>'):'';
-    const pagamento=d.status==='pago'?somentePermissao('cantina_operar','<button class="btn btn-sm btn-ghost" title="Desfazer pagamento" onclick="desfazerPagamentoDevedor(\''+escapeAttr(d.id)+'\')">↶ Desfazer</button>'):somentePermissao('cantina_operar','<button class="btn btn-sm btn-primary" onclick="abrirPagamentoDevedor(\''+escapeAttr(d.id)+'\')">✓ Registrar pagamento</button>');
-    const origemBadge=automatico?'<div class="text-muted" style="margin-top:3px;font-size:11px;">Gerado pela Cantina</div>':'<div class="text-muted" style="margin-top:3px;font-size:11px;">Cadastro avulso</div>';
-    return '<tr><td><strong>'+escapeHTML(d.nome||'Sem nome')+'</strong>'+resumoAutoriaDevedor(d)+'</td><td>'+escapeHTML(origem)+origemBadge+'</td><td>'+fmtData(d.dataDivida)+'</td><td>'+fmt(d.valor)+'</td><td><span class="badge '+(d.status==='pago'?'badge-verde':'badge-amarelo')+'">'+(d.status==='pago'?'Pago':'Pendente')+'</span>'+(d.status==='pago'?'<div class="text-muted" style="margin-top:4px;">'+fmtData(d.dataPagamento)+' · '+escapeHTML(d.formaPagamento||'-')+'</div>':'')+'</td><td style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'+historico+editar+excluir+pagamento+'</div></td></tr>';
-  }).join(''):'<tr><td colspan="6"><div class="empty"><div class="empty-icon">&#128179;</div><p>Nenhum devedor registrado em '+mesNome(mes)+'/'+ano+'.</p></div></td></tr>';
-  document.getElementById('pageContent').innerHTML='<div class="page"><div class="grid-4 mb-6"><div class="metric"><div class="metric-label">A receber</div><div class="metric-value '+(totalPendente>0?'negativo':'neutro')+'">'+fmt(totalPendente)+'</div><div class="metric-sub">Dívidas originadas no período</div></div><div class="metric"><div class="metric-label">Recebido no mês</div><div class="metric-value positivo">'+fmt(totalRecebido)+'</div><div class="metric-sub">Pagamentos efetivamente registrados</div></div><div class="metric"><div class="metric-label">Pendentes</div><div class="metric-value neutro">'+pendentes.length+'</div><div class="metric-sub">Pessoa(s) aguardando pagamento</div></div><div class="metric"><div class="metric-label">Quitados no mês</div><div class="metric-value positivo">'+recebidosMes.length+'</div><div class="metric-sub">Pagamento realizado em '+mesNome(mes)+'/'+ano+'</div></div></div><div class="card"><div class="section-header"><div><div class="section-title">Devedores — '+mesNome(mes)+'/'+ano+'</div><div class="text-muted" style="margin-top:4px;">Valores pendentes não alteram o caixa. Somente o pagamento gera uma entrada financeira.</div></div></div><div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Origem</th><th>Data</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+linhas+'</tbody></table></div></div></div>';
+    const excluir=somentePermissao('cantina_operar','<button class="btn btn-sm btn-ghost" title="Excluir" onclick="excluirDevedor(\''+escapeAttr(d.id)+'\')">&#128465;</button>');
+    const pagamento=htmlAcaoPagamentoDevedor(d);
+    return '<tr><td><strong>'+escapeHTML(d.nome||'Sem nome')+'</strong>'+resumoAutoriaDevedor(d)+'</td><td>'+escapeHTML(origem)+'<div class="text-muted" style="margin-top:3px;font-size:11px;">Cadastro avulso</div></td><td>'+fmtData(d.dataDivida)+'</td><td>'+fmt(d.valor)+'</td><td><span class="badge '+(d.status==='pago'?'badge-verde':'badge-amarelo')+'">'+(d.status==='pago'?'Pago':'Pendente')+'</span>'+(d.status==='pago'?'<div class="text-muted" style="margin-top:4px;">'+fmtData(d.dataPagamento)+' · '+escapeHTML(d.formaPagamento||'-')+'</div>':'')+'</td><td style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'+historico+editar+excluir+pagamento+'</div></td></tr>';
+  }).join(''):'<tr><td colspan="6"><div class="empty"><p>Nenhum devedor avulso registrado neste mês.</p></div></td></tr>';
+
+  const corpoCantina=gruposHTML||'<div class="report-empty">Nenhuma Cantina com devedores registrada neste mês.</div>';
+  document.getElementById('pageContent').innerHTML='<div class="page">'+avisoAnteriores+'<div class="grid-4 mb-6"><div class="metric"><div class="metric-label">A receber</div><div class="metric-value '+(totalPendente>0?'negativo':'neutro')+'">'+fmt(totalPendente)+'</div><div class="metric-sub">Pendências originadas em '+mesNome(mes)+'/'+ano+'</div></div><div class="metric"><div class="metric-label">Recebido no mês</div><div class="metric-value positivo">'+fmt(totalRecebido)+'</div><div class="metric-sub">Pagamentos efetivamente registrados</div></div><div class="metric"><div class="metric-label">Pendentes</div><div class="metric-value neutro">'+pendentes.length+'</div><div class="metric-sub">Pessoa(s) aguardando pagamento</div></div><div class="metric"><div class="metric-label">Quitados no mês</div><div class="metric-value positivo">'+recebidosMes.length+'</div><div class="metric-sub">Pagamento realizado em '+mesNome(mes)+'/'+ano+'</div></div></div><div class="card mb-6"><div class="section-header"><div><div class="section-title">Devedores de Cantina — '+mesNome(mes)+'/'+ano+'</div><div class="text-muted" style="margin-top:4px;">Agrupados pela Cantina de origem. Clique em uma Cantina para visualizar e receber os devedores.</div></div></div><div class="debt-group-list">'+corpoCantina+'</div></div><div class="card"><div class="section-header"><div><div class="section-title">Devedores avulsos — '+mesNome(mes)+'/'+ano+'</div><div class="text-muted" style="margin-top:4px;">Cadastros avulsos permanecem com edição, exclusão, histórico e pagamento individuais.</div></div></div><div class="table-wrap"><table><thead><tr><th>Pessoa</th><th>Origem</th><th>Data</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+linhasAvulsos+'</tbody></table></div></div></div>';
 }
 function formularioDevedorHTML(d=null){
   const cantinas=[...db.cantina].filter(c=>c.tipo==='entrada').sort((a,b)=>String(b.data).localeCompare(String(a.data)));
@@ -4202,7 +4279,7 @@ Object.assign(window,{
   novoDevedorAvulso,alternarOrigemDevedor,salvarDevedorAvulso,editarDevedor,salvarEdicaoDevedor,excluirDevedor,abrirCantinaDoDevedor,abrirPagamentoDevedor,confirmarPagamentoDevedor,desfazerPagamentoDevedor,
   novaRifa,salvarRifa,editarRifa,delRifa,
   confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,notificar,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
-  abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,atualizarMapeamentoCSV,reprocessarCabecalhoCSV,
+  abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,atualizarMapeamentoCSV,reprocessarCabecalhoCSV,irParaPeriodoDevedor,toggleGrupoCantinaDevedor,
 });
 
 async function init(){
