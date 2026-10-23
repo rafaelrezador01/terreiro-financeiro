@@ -45,6 +45,19 @@ button:focus-visible,[role="button"]:focus-visible,.form-control:focus-visible,.
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
 .metric{background:var(--branco);border-radius:var(--radius);border:1px solid var(--borda);padding:20px 24px;}
+.metric{position:relative;}
+.metric-detail-btn{position:absolute;top:12px;right:12px;width:28px;height:28px;min-height:28px;padding:0;border:1px solid var(--borda);border-radius:8px;background:var(--branco);color:var(--texto2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;transition:all .2s;}
+.metric-detail-btn:hover{border-color:var(--verde);color:var(--verde);background:var(--verde-bg);}
+.metric-detail-btn:focus-visible{outline:3px solid rgba(64,145,108,.35);outline-offset:2px;}
+.metric.has-detail{padding-right:54px;}
+.finance-detail-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px;}
+.finance-detail-box{padding:13px;border:1px solid var(--borda);border-radius:var(--radius-sm);background:var(--creme);}
+.finance-detail-box-label{font-size:10px;color:var(--texto3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;}
+.finance-detail-box-value{font-size:17px;font-weight:600;}
+.finance-detail-table td:last-child,.finance-detail-table th:last-child{text-align:right;white-space:nowrap;}
+.finance-detail-table .num{text-align:right;white-space:nowrap;}
+.finance-detail-note{font-size:12px;color:var(--texto3);line-height:1.5;margin-top:12px;}
+@media(max-width:600px){.finance-detail-summary{grid-template-columns:1fr;}.metric.has-detail{padding-right:48px;}.metric-detail-btn{top:10px;right:10px;}}
 .metric-label{font-size:12px;color:var(--texto3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
 .metric-value{font-family:'Playfair Display',serif;font-size:28px;font-weight:500;}
 .metric-value.positivo{color:var(--verde);}
@@ -884,7 +897,7 @@ textarea.form-control{
   </nav>
   <div class="sidebar-footer">
     <div id="mesAnoAtual"></div>
-    <div style="margin-top:4px;">v1.4 - App Banco OFX/CSV</div>
+    <div style="margin-top:4px;">v1.6 - Detalhamento financeiro</div>
     <div class="sidebar-user">
       <div class="sidebar-user-email" id="usuarioLogadoEmail" title="Usuário conectado"></div>
       <div class="sidebar-user-role" id="usuarioLogadoPerfil">Usuário</div>
@@ -1643,6 +1656,88 @@ function fluxoMes(mes,ano){
   const saldoFinal=saldoInicial+resultado;
   return{saldoInicial,ent,sai,resultado,saldoFinal};
 }
+
+// Detalhamento consultivo do Dashboard por forma de pagamento.
+// Não altera os cálculos do fluxo de caixa: apenas decompõe os mesmos lançamentos já utilizados acima.
+function nomeFormaPagamento(valor){
+  const forma=String(valor||'').trim();
+  return forma||'Não informado';
+}
+function grupoFormaPagamento(valor){
+  const forma=nomeFormaPagamento(valor).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if(/dinheiro|especie|cash/.test(forma))return'dinheiro';
+  if(/pix|cart|credito|debito|boleto|transfer|ted|doc|banco|deposito/.test(forma))return'bancario';
+  return'outros';
+}
+function lancamentosAtePeriodoAnterior(mes,ano){
+  const alvo=periodoParaNum(mes,ano);
+  return db.lancamentos.filter(l=>{
+    if(!dataISOValida(l.data))return false;
+    const d=new Date(l.data+'T12:00:00');
+    return periodoParaNum(d.getMonth()+1,d.getFullYear())<alvo;
+  });
+}
+function detalharEntradasPorPagamento(mes,ano){
+  const mapa=new Map();
+  db.lancamentos.forEach(l=>{
+    if(l.tipo!=='receita'||!dataISOValida(l.data))return;
+    const d=new Date(l.data+'T12:00:00');
+    if(d.getMonth()+1!==mes||d.getFullYear()!==ano)return;
+    const forma=nomeFormaPagamento(l.formaPagamento);
+    const atual=mapa.get(forma)||{forma,total:0,qtd:0,grupo:grupoFormaPagamento(forma)};
+    atual.total+=Number(l.valor)||0;atual.qtd++;
+    mapa.set(forma,atual);
+  });
+  return[...mapa.values()].sort((a,b)=>b.total-a.total||a.forma.localeCompare(b.forma,'pt-BR'));
+}
+function detalharSaldoInicialPorPagamento(mes,ano){
+  const mapa=new Map();
+  lancamentosAtePeriodoAnterior(mes,ano).forEach(l=>{
+    const forma=nomeFormaPagamento(l.formaPagamento);
+    const atual=mapa.get(forma)||{forma,entradas:0,saidas:0,saldo:0,qtd:0,grupo:grupoFormaPagamento(forma)};
+    const valor=Number(l.valor)||0;
+    if(l.tipo==='receita')atual.entradas+=valor;
+    else if(l.tipo==='despesa')atual.saidas+=valor;
+    else return;
+    atual.saldo=atual.entradas-atual.saidas;atual.qtd++;
+    mapa.set(forma,atual);
+  });
+  return[...mapa.values()].sort((a,b)=>Math.abs(b.saldo)-Math.abs(a.saldo)||a.forma.localeCompare(b.forma,'pt-BR'));
+}
+function resumoGruposDetalhamento(itens,campo='total'){
+  return itens.reduce((acc,item)=>{
+    const grupo=item.grupo||'outros';
+    acc[grupo]=(acc[grupo]||0)+(Number(item[campo])||0);
+    return acc;
+  },{bancario:0,dinheiro:0,outros:0});
+}
+function abrirDetalheEntradasDashboard(){
+  const mes=filtroMes,ano=filtroAno;
+  const itens=detalharEntradasPorPagamento(mes,ano);
+  const total=itens.reduce((s,i)=>s+i.total,0);
+  const grupos=resumoGruposDetalhamento(itens,'total');
+  const linhas=itens.length?itens.map(i=>'<tr><td><strong>'+escapeHTML(i.forma)+'</strong><div class="text-muted">'+i.qtd+' lançamento(s)</div></td><td class="num valor-positivo">'+fmt(i.total)+'</td></tr>').join(''):'<tr><td colspan="2"><div class="empty">Nenhuma entrada neste período.</div></td></tr>';
+  const outros=grupos.outros?'<div class="finance-detail-box"><div class="finance-detail-box-label">Outros / não informado</div><div class="finance-detail-box-value">'+fmt(grupos.outros)+'</div></div>':'';
+  openModal('Entradas por forma de pagamento — '+mesNome(mes)+'/'+ano,
+    '<div class="finance-detail-summary"><div class="finance-detail-box"><div class="finance-detail-box-label">Banco / meios digitais</div><div class="finance-detail-box-value valor-positivo">'+fmt(grupos.bancario)+'</div></div><div class="finance-detail-box"><div class="finance-detail-box-label">Dinheiro</div><div class="finance-detail-box-value valor-positivo">'+fmt(grupos.dinheiro)+'</div></div>'+outros+'</div>'+ 
+    '<div class="table-wrap"><table class="finance-detail-table"><thead><tr><th>Forma de pagamento</th><th>Total</th></tr></thead><tbody>'+linhas+'</tbody><tfoot><tr><td>Total das entradas</td><td class="num valor-positivo">'+fmt(total)+'</td></tr></tfoot></table></div>'+ 
+    '<div class="finance-detail-note">Este detalhamento usa o campo <strong>Pagamento</strong> dos mesmos lançamentos que formam o total de Entradas do Dashboard. Nenhum valor é recalculado ou alterado.</div>',
+    '<button class="btn btn-primary" onclick="closeModal()">Fechar</button>');
+}
+function abrirDetalheSaldoInicialDashboard(){
+  const mes=filtroMes,ano=filtroAno;
+  const itens=detalharSaldoInicialPorPagamento(mes,ano);
+  const saldo=itens.reduce((s,i)=>s+i.saldo,0);
+  const grupos=resumoGruposDetalhamento(itens,'saldo');
+  const ant=periodoAnterior(mes,ano);
+  const linhas=itens.length?itens.map(i=>'<tr><td><strong>'+escapeHTML(i.forma)+'</strong><div class="text-muted">'+i.qtd+' lançamento(s) anteriores</div></td><td class="num valor-positivo">'+fmt(i.entradas)+'</td><td class="num valor-negativo">'+fmt(i.saidas)+'</td><td class="num '+(i.saldo>=0?'valor-positivo':'valor-negativo')+'">'+fmt(i.saldo)+'</td></tr>').join(''):'<tr><td colspan="4"><div class="empty">Não há lançamentos anteriores a este período.</div></td></tr>';
+  const outros=grupos.outros?'<div class="finance-detail-box"><div class="finance-detail-box-label">Outros / não informado</div><div class="finance-detail-box-value '+(grupos.outros>=0?'valor-positivo':'valor-negativo')+'">'+fmt(grupos.outros)+'</div></div>':'';
+  openModal('Composição do saldo inicial — até '+mesNome(ant.mes)+'/'+ant.ano,
+    '<div class="finance-detail-summary"><div class="finance-detail-box"><div class="finance-detail-box-label">Saldo banco / digital</div><div class="finance-detail-box-value '+(grupos.bancario>=0?'valor-positivo':'valor-negativo')+'">'+fmt(grupos.bancario)+'</div></div><div class="finance-detail-box"><div class="finance-detail-box-label">Saldo em dinheiro</div><div class="finance-detail-box-value '+(grupos.dinheiro>=0?'valor-positivo':'valor-negativo')+'">'+fmt(grupos.dinheiro)+'</div></div>'+outros+'</div>'+ 
+    '<div class="table-wrap"><table class="finance-detail-table"><thead><tr><th>Pagamento</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Saldo</th></tr></thead><tbody>'+linhas+'</tbody><tfoot><tr><td>Saldo inicial</td><td></td><td></td><td class="num '+(saldo>=0?'valor-positivo':'valor-negativo')+'">'+fmt(saldo)+'</td></tr></tfoot></table></div>'+ 
+    '<div class="finance-detail-note">O saldo inicial continua sendo exatamente o saldo acumulado calculado pelo sistema. Aqui ele apenas é separado conforme a forma de pagamento registrada nos lançamentos anteriores (entradas − saídas).</div>',
+    '<button class="btn btn-primary" onclick="closeModal()">Fechar</button>');
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // DASHBOARD
@@ -1676,8 +1771,8 @@ function renderDashboard(){
   // cards de fluxo de caixa: 5 métricas
   const metricsHTML=
     '<div class="grid-4 mb-6" style="grid-template-columns:repeat(5,1fr);">'+
-      '<div class="metric"><div class="metric-label">Saldo inicial</div><div class="metric-value '+(saldoInicial>=0?'positivo':'negativo')+'">'+fmt(saldoInicial)+'</div><div class="metric-sub">Vindo de '+mesNome(mes===1?12:mes-1)+'/'+(mes===1?ano-1:ano)+'</div></div>'+
-      '<div class="metric"><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
+      '<div class="metric has-detail"><button type="button" class="metric-detail-btn" onclick="abrirDetalheSaldoInicialDashboard()" title="Ver composição do saldo inicial" aria-label="Ver composição do saldo inicial">&#9432;</button><div class="metric-label">Saldo inicial</div><div class="metric-value '+(saldoInicial>=0?'positivo':'negativo')+'">'+fmt(saldoInicial)+'</div><div class="metric-sub">Vindo de '+mesNome(mes===1?12:mes-1)+'/'+(mes===1?ano-1:ano)+' · clique em &#9432; para detalhar</div></div>'+
+      '<div class="metric has-detail"><button type="button" class="metric-detail-btn" onclick="abrirDetalheEntradasDashboard()" title="Ver entradas por forma de pagamento" aria-label="Ver entradas por forma de pagamento">&#9432;</button><div class="metric-label">Entradas</div><div class="metric-value positivo">'+fmt(ent)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+' · clique em &#9432; para detalhar</div></div>'+
       '<div class="metric"><div class="metric-label">Saídas</div><div class="metric-value negativo">'+fmt(sai)+'</div><div class="metric-sub">'+mesNome(mes)+' '+ano+'</div></div>'+
       '<div class="metric"><div class="metric-label">Resultado do mes</div><div class="metric-value '+(resultado>=0?'positivo':'negativo')+'">'+fmt(resultado)+'</div><div class="metric-sub">'+(resultado>=0?'Superávit':'Déficit')+'</div></div>'+
       '<div class="metric" style="border:1.5px solid '+(saldoFinal>=0?'var(--verde)':'var(--vermelho)')+'"><div class="metric-label">Saldo final em caixa</div><div class="metric-value '+(saldoFinal>=0?'positivo':'negativo')+'">'+fmt(saldoFinal)+'</div><div class="metric-sub">Acumulado ate '+mesNome(mes)+'/'+ano+'</div></div>'+
@@ -3850,7 +3945,7 @@ Object.assign(window,{
   navigate,toggleSidebar,closeSidebar,openModal,closeModal,sair,
   alterarPeriodoGlobal,iniciarFiltroGlobal,atualizarSeletorGlobal,
   trabExisteNoPeriodo,trabAtivoNoPeriodo,trabIsentoNoPeriodo,trabElegivelParaCobranca,trabsValidosParaPeriodo,trabsElegiveisParaCobranca,migrarTrabalhadores,
-  totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,
+  totaisMes,periodoAnterior,calcularSaldoInicial,fluxoMes,abrirDetalheSaldoInicialDashboard,abrirDetalheEntradasDashboard,
   pgDashboard,pgMensalidades,pgLancamentos,pgCantina,pgRifas,pgTrabalhadores,pgRelatorios,pgAppBanco,pgConfiguracoes,atualizarRelatorioPersonalizado,selecionarComplementosRelatorio,imprimirRelatorioMensal,renderPreviaRelatorio,
   renderDashboard,renderMens,renderLanc,renderCantina,renderRifas,renderTrabs,
   gerarMes,abrirExcluirMesMensalidades,excluirMesMensalidades,darBaixa,confirmarBaixa,estornar,estornoMassa,atualizarBulkMens,toggleTodosMens,limparSelMens,baixaMassa,confirmarBaixaMassa,
