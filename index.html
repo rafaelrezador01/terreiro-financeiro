@@ -139,6 +139,27 @@ th .cb-select{accent-color:var(--branco);}
 .auth-message.error{display:block;background:var(--vermelho-bg);color:var(--vermelho);border:1px solid rgba(193,18,31,.2);}
 .auth-message.success{display:block;background:var(--verde-bg);color:var(--verde);border:1px solid rgba(45,106,79,.25);}
 .auth-security{text-align:center;color:var(--texto3);font-size:11px;margin-top:22px;}
+.auth-password-wrap{position:relative;}
+.auth-password-wrap .form-control{padding-right:50px;}
+.auth-password-toggle{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:38px;height:34px;border:0;border-radius:7px;background:transparent;color:var(--texto2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;}
+.auth-password-toggle:hover{background:var(--creme2);color:var(--verde);}
+.auth-password-toggle:focus-visible{outline:3px solid rgba(64,145,108,.35);outline-offset:1px;}
+.auth-message{align-items:flex-start;gap:9px;}
+.auth-message.error,.auth-message.success,.auth-message.warning,.auth-message.info{display:flex;}
+.auth-message.warning{background:var(--amarelo-bg);color:#7a5c00;border:1px solid rgba(233,196,106,.4);}
+.auth-message.info{background:var(--azul-bg);color:var(--azul);border:1px solid rgba(27,79,114,.2);}
+.auth-message-icon{flex:0 0 auto;font-size:16px;line-height:1.2;}
+.auth-message-copy{min-width:0;line-height:1.45;}
+.auth-message-title{display:block;font-weight:600;margin-bottom:2px;}
+.toast-container{position:fixed;top:18px;right:18px;z-index:9999;display:flex;flex-direction:column;gap:10px;width:min(380px,calc(100vw - 24px));pointer-events:none;}
+.toast{pointer-events:auto;background:var(--branco);border:1px solid var(--borda);border-left:4px solid var(--azul);border-radius:var(--radius-sm);box-shadow:var(--sombra-lg);padding:13px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;animation:toastIn .22s ease;}
+.toast.success{border-left-color:var(--verde);}.toast.error{border-left-color:var(--vermelho);}.toast.warning{border-left-color:var(--amarelo);}.toast.info{border-left-color:var(--azul);}
+.toast-icon{font-size:17px;line-height:1.25}.toast-title{font-size:13px;font-weight:600;color:var(--texto);}.toast-message{font-size:12px;color:var(--texto2);line-height:1.45;margin-top:2px;overflow-wrap:anywhere;}
+.toast-close{background:none;border:0;color:var(--texto3);cursor:pointer;font-size:18px;line-height:1;padding:0 2px;}
+.toast.saindo{opacity:0;transform:translateX(18px);transition:.18s ease;}
+@keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.toast-container{top:10px;right:10px;left:10px;width:auto;}.toast{padding:12px;}}
+
 .sidebar-user{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12);}
 .sidebar-user-email{font-size:11px;color:rgba(255,255,255,.72);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px;}
 .sidebar-user-role{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:10px;font-weight:600;letter-spacing:.3px;margin-bottom:9px;}
@@ -830,7 +851,10 @@ textarea.form-control{
       </div>
       <div class="form-group">
         <label class="form-label" for="loginSenha">Senha</label>
-        <input type="password" class="form-control" id="loginSenha" autocomplete="current-password" required minlength="6" placeholder="Digite sua senha">
+        <div class="auth-password-wrap">
+          <input type="password" class="form-control" id="loginSenha" autocomplete="current-password" required minlength="6" placeholder="Digite sua senha">
+          <button type="button" class="auth-password-toggle" id="btnMostrarSenha" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">&#128065;</button>
+        </div>
       </div>
       <button type="submit" class="btn btn-primary" id="btnEntrar">Entrar</button>
     </form>
@@ -893,6 +917,7 @@ textarea.form-control{
   </div>
 </div>
 </div>
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
 <script type="module">
 // Firebase SDK
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -1016,12 +1041,12 @@ function somentePermissao(chave,html){return temPermissao(chave)?html:'';}
 function podeVerAppBanco(){return temPermissao('app_banco_visualizar')||temPermissao('app_banco_gerenciar');}
 function exigirSupremo(acao='realizar esta ação'){
   if(isSupremo())return true;
-  alert('Acesso restrito. Somente o perfil Supremo pode '+acao+'.');
+  notificar('warning','Acesso restrito','Somente o perfil Supremo pode '+acao+'.');
   return false;
 }
 function exigirPermissao(chave,acao='realizar esta ação'){
   if(temPermissao(chave))return true;
-  alert('Seu acesso não possui permissão para '+acao+'. Solicite a liberação ao perfil Supremo.');
+  notificar('warning','Permissão necessária','Seu acesso não possui permissão para '+acao+'. Solicite a liberação ao perfil Supremo.');
   return false;
 }
 function perfilLabel(){return isSupremo()?'Supremo':'Usuário';}
@@ -1262,7 +1287,7 @@ function abrirHistoricoModulo(entidade,titulo){
 // Salva tudo no Firebase e informa falhas de persistência.
 function salvarDB(){
   if(!firebaseAuth.currentUser){
-    alert('Sua sessão terminou. Entre novamente antes de salvar.');
+    notificar('error','Sessão encerrada','Entre novamente antes de salvar qualquer alteração.');
     return Promise.resolve(false);
   }
   prepararAuditoriaAntesSalvar();
@@ -1277,10 +1302,10 @@ function salvarDB(){
   }));
   const atualizacoes={'axe_financeiro':payload};
   eventos.forEach(evento=>{atualizacoes['auditoria_financeiro/'+evento.id]=evento;});
-  return update(raizRef,atualizacoes).then(()=>true).catch(erro=>{
+  return update(raizRef,atualizacoes).then(()=>{notificar('success','Alterações salvas','Os dados foram salvos com sucesso.',2600);return true;}).catch(erro=>{
     _eventosAuditoriaPendentes.unshift(...eventos);
     console.error('Falha ao salvar no Firebase:',erro);
-    alert('Não foi possível salvar os dados. Verifique a internet e as permissões do Firebase antes de continuar.');
+    notificar('error','Falha ao salvar','Não foi possível salvar os dados. Verifique sua conexão e tente novamente.',6500);
     return false;
   }).finally(()=>{
     _salvamentosPendentes=Math.max(0,_salvamentosPendentes-1);
@@ -1373,9 +1398,9 @@ function closeSidebar(){document.getElementById('sidebar').classList.remove('ope
 
 const titulos={dashboard:'Dashboard',mensalidades:'Mensalidades',lancamentos:'Lançamentos',cantina:'Cantina',rifas:'Rifas e Eventos',trabalhadores:'Trabalhadores',relatorios:'Relatórios',appBanco:'App Banco',configuracoes:'Configurações'};
 function navigate(page){
-  if(page==='configuracoes'&&!isSupremo()){alert('Acesso restrito ao perfil Supremo.');page='dashboard';}
-  if(page==='relatorios'&&!temPermissao('relatorios_visualizar')){alert('Seu acesso não possui permissão para visualizar relatórios.');page='dashboard';}
-  if(page==='appBanco'&&!podeVerAppBanco()){alert('Seu acesso não possui permissão para visualizar o App Banco.');page='dashboard';}
+  if(page==='configuracoes'&&!isSupremo()){notificar('warning','Acesso restrito','Configurações são exclusivas do perfil Supremo.');page='dashboard';}
+  if(page==='relatorios'&&!temPermissao('relatorios_visualizar')){notificar('warning','Permissão necessária','Seu acesso não possui permissão para visualizar relatórios.');page='dashboard';}
+  if(page==='appBanco'&&!podeVerAppBanco()){notificar('warning','Permissão necessária','Seu acesso não possui permissão para visualizar o App Banco.');page='dashboard';}
   if(_pararEscutaUsuariosConfig&&page!=='configuracoes'){_pararEscutaUsuariosConfig();_pararEscutaUsuariosConfig=null;}
   paginaAtual=page;
   document.querySelectorAll('.nav-item').forEach(n=>{
@@ -1413,10 +1438,39 @@ document.getElementById('modalOverlay').addEventListener('click',function(e){if(
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('modalOverlay').classList.contains('open'))closeModal();});
 
 
-function mostrarMensagemAuth(mensagem,tipo='error'){
+function mostrarMensagemAuth(mensagem,tipo='error',titulo=''){
   const el=document.getElementById('authMessage');
-  el.textContent=mensagem||'';
+  if(!el)return;
+  el.replaceChildren();
   el.className='auth-message'+(mensagem?' '+tipo:'');
+  if(!mensagem)return;
+  const configs={
+    error:{icone:'⚠',titulo:'Não foi possível continuar'},
+    success:{icone:'✓',titulo:'Tudo certo'},
+    warning:{icone:'!',titulo:'Atenção'},
+    info:{icone:'ℹ',titulo:'Informação'}
+  };
+  const cfg=configs[tipo]||configs.error;
+  const icone=document.createElement('span');icone.className='auth-message-icon';icone.textContent=cfg.icone;
+  const copy=document.createElement('span');copy.className='auth-message-copy';
+  const strong=document.createElement('strong');strong.className='auth-message-title';strong.textContent=titulo||cfg.titulo;
+  const texto=document.createElement('span');texto.textContent=mensagem;
+  copy.append(strong,texto);el.append(icone,copy);
+}
+
+function notificar(tipo='info',titulo='Informação',mensagem='',duracao=4200){
+  const container=document.getElementById('toastContainer');if(!container)return;
+  const configs={success:'✓',error:'⚠',warning:'!',info:'ℹ'};
+  const toast=document.createElement('div');toast.className='toast '+(configs[tipo]?tipo:'info');toast.setAttribute('role',tipo==='error'?'alert':'status');
+  const icone=document.createElement('div');icone.className='toast-icon';icone.textContent=configs[tipo]||configs.info;
+  const corpo=document.createElement('div');
+  const tituloEl=document.createElement('div');tituloEl.className='toast-title';tituloEl.textContent=titulo;
+  const mensagemEl=document.createElement('div');mensagemEl.className='toast-message';mensagemEl.textContent=mensagem;
+  corpo.append(tituloEl,mensagemEl);
+  const fechar=document.createElement('button');fechar.type='button';fechar.className='toast-close';fechar.setAttribute('aria-label','Fechar aviso');fechar.textContent='×';
+  const remover=()=>{if(!toast.isConnected)return;toast.classList.add('saindo');setTimeout(()=>toast.remove(),190);};
+  fechar.addEventListener('click',remover);toast.append(icone,corpo,fechar);container.appendChild(toast);
+  if(duracao>0)setTimeout(remover,duracao);
 }
 
 function traduzirErroAuth(erro){
@@ -1458,7 +1512,8 @@ async function entrarNoSistema(evento){
   const botao=document.getElementById('btnEntrar');
   mostrarMensagemAuth('');
   if(!email||!senha){
-    mostrarMensagemAuth('Informe o e-mail e a senha.');
+    mostrarMensagemAuth('Preencha o e-mail e a senha para entrar.','warning','Campos obrigatórios');
+    (!email?document.getElementById('loginEmail'):document.getElementById('loginSenha')).focus();
     return;
   }
   botao.disabled=true;
@@ -1467,7 +1522,7 @@ async function entrarNoSistema(evento){
     await signInWithEmailAndPassword(firebaseAuth,email,senha);
   }catch(erro){
     console.error('Falha no login:',erro);
-    mostrarMensagemAuth(traduzirErroAuth(erro));
+    mostrarMensagemAuth(traduzirErroAuth(erro),'error','Erro ao entrar');
   }finally{
     botao.disabled=false;
     botao.textContent='Entrar';
@@ -1478,16 +1533,16 @@ async function recuperarSenha(){
   const email=document.getElementById('loginEmail').value.trim();
   mostrarMensagemAuth('');
   if(!email){
-    mostrarMensagemAuth('Digite seu e-mail para receber a recuperação de senha.');
+    mostrarMensagemAuth('Digite seu e-mail para receber a recuperação de senha.','warning','Informe seu e-mail');
     document.getElementById('loginEmail').focus();
     return;
   }
   try{
     await sendPasswordResetEmail(firebaseAuth,email);
-    mostrarMensagemAuth('Enviamos um e-mail para redefinir sua senha. Verifique também a caixa de spam.','success');
+    mostrarMensagemAuth('Enviamos um e-mail para redefinir sua senha. Verifique também a caixa de spam.','success','E-mail enviado');
   }catch(erro){
     console.error('Falha ao enviar recuperação:',erro);
-    mostrarMensagemAuth(traduzirErroAuth(erro));
+    mostrarMensagemAuth(traduzirErroAuth(erro),'error','Falha na recuperação');
   }
 }
 
@@ -1496,7 +1551,7 @@ async function sair(){
     await signOut(firebaseAuth);
   }catch(erro){
     console.error('Falha ao sair:',erro);
-    alert('Não foi possível encerrar a sessão. Tente novamente.');
+    notificar('error','Falha ao sair','Não foi possível encerrar a sessão. Tente novamente.');
   }
 }
 
@@ -3803,7 +3858,7 @@ Object.assign(window,{
   novoTrab,editTrab,salvarTrab,alternarCampoIsencaoTrab,delTrab,atualizarBulkTrabs,toggleTodosTrabs,limparSelTrabs,alterarStatusMassaTrabs,editMassaTrabs,confirmarEditMassa,
   novaCantina,salvarCantina,editarCantina,delCantina,atualizarBulkCantina,toggleTodosCantina,limparSelCantina,excluirMassaCantina,
   novaRifa,salvarRifa,editarRifa,delRifa,
-  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
+  confirmar,fmt,fmtData,hoje,getMes,getAno,mesNome,uid,notificar,abrirHistoricoRegistro,abrirHistoricoModulo,isSupremo,temPermissao,podeVerAppBanco,alterarPermissaoUsuario,aplicarPresetUsuario,alterarStatusUsuario,
   abrirImportacaoBanco,processarArquivoBanco,renderPreviaImportacaoBanco,confirmarImportacaoBanco,excluirImportacaoBanco,filtrarBuscaBanco,setFiltroTipoBanco,atualizarMapeamentoCSV,reprocessarCabecalhoCSV,
 });
 
@@ -3835,6 +3890,19 @@ async function init(){
 
 document.getElementById('loginForm').addEventListener('submit',entrarNoSistema);
 document.getElementById('btnRecuperarSenha').addEventListener('click',recuperarSenha);
+document.getElementById('btnMostrarSenha').addEventListener('click',()=>{
+  const campo=document.getElementById('loginSenha');
+  const botao=document.getElementById('btnMostrarSenha');
+  const mostrando=campo.type==='text';
+  campo.type=mostrando?'password':'text';
+  botao.setAttribute('aria-pressed',String(!mostrando));
+  botao.setAttribute('aria-label',mostrando?'Mostrar senha':'Ocultar senha');
+  botao.title=mostrando?'Mostrar senha':'Ocultar senha';
+  botao.innerHTML=mostrando?'&#128065;':'&#128584;';
+});
+window.addEventListener('offline',()=>notificar('warning','Sem conexão','A conexão com a internet foi perdida. Evite fazer alterações até ela voltar.',0));
+window.addEventListener('online',()=>notificar('success','Conexão restabelecida','O sistema voltou a ter acesso à internet.',3000));
+
 
 setPersistence(firebaseAuth,browserLocalPersistence).catch(erro=>{
   console.warn('Não foi possível definir a persistência local da sessão:',erro);
